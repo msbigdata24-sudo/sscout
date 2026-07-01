@@ -249,7 +249,13 @@ def export_xls(run_id: str):
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
-    return Response(status_code=204)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+        '<rect width="32" height="32" rx="7" fill="#3d8bfd"/>'
+        '<path d="M16 7l9 16H7z" fill="#fff" opacity=".95"/>'
+        "</svg>"
+    )
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @app.get("/")

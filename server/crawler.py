@@ -190,7 +190,9 @@ async def analyze_client_site(site_url: str, **kwargs) -> dict:
     if not root:
         return {"ok": False, "error": "Некорректный URL"}
     host = urlparse(root).netloc.lower().lstrip("www.")
-    data = await parse_site(host, depth=1, delay_ms=0, **kwargs)
+    depth = int(kwargs.pop("depth", 1))
+    delay_ms = int(kwargs.pop("delay_ms", 0))
+    data = await parse_site(host, depth=depth, delay_ms=delay_ms, **kwargs)
     if not data.get("ok"):
         return {"ok": False, "error": data.get("error") or "Сайт недоступен"}
     return {
