@@ -247,6 +247,11 @@ def export_xls(run_id: str):
     )
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+
 @app.get("/")
 def index_page():
     index = ROOT / "index.html"
