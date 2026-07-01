@@ -14,7 +14,7 @@ from server.filters import (
     is_catalog_domain,
     parse_domain_list,
     parse_regions,
-    region_matches,
+    serp_hit_relevant,
     try_catalog_page,
 )
 from server.phones import domain_from_url, pick_phones_enriched, validate_phone
@@ -147,14 +147,15 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
         await _persist(run_id, pipeline)
 
         candidates: list[dict] = []
-        excluded_rows: list[dict] = []
+        excluded_count = 0
+        irrelevant_count = 0
         for domain, meta in grouped.items():
             status = classify_domain(domain, exclude=exclude, client_domain=client_domain)
-            text_blob = f"{meta.get('title')} {meta.get('snippet')} {brief.get('niche', '')}"
             if status in ("исключён", "агрегатор"):
-                excluded_rows.append(_row(domain, meta, status, "SERP", regions))
+                excluded_count += 1
                 continue
-            if regions and not region_matches(text_blob, regions, region_mode):
+            if not serp_hit_relevant(meta, queries, brief.get("niche", "")):
+                irrelevant_count += 1
                 continue
             candidates.append({**meta, "domain": domain})
 
@@ -177,7 +178,14 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
 
         _set_step(
             pipeline, "filter", "done",
-            f"К обходу: {len(alive_candidates)} · исключено {len(excluded_rows)}",
+            f"К обходу: {len(alive_candidates)} · "
+            f"отсечено: агрег. {excluded_count}, не по теме {irrelevant_count}",
+        )
+        _log(
+            pipeline,
+            f"После фильтра: {len(alive_candidates)} сайтов к обходу "
+            f"(агрегаторов {excluded_count}, не по теме {irrelevant_count})",
+            status="success",
         )
         await _persist(run_id, pipeline)
 
@@ -272,7 +280,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
 
         # ── 6 dedup ──
         _set_step(pipeline, "dedup", "running")
-        all_rows = _dedupe_rows(rows + excluded_rows)
+        all_rows = _dedupe_rows(rows)
         _set_step(pipeline, "dedup", "done", f"Итого строк {len(all_rows)}")
         _log(pipeline, f"Сбор завершён · {len(all_rows)} строк · телефонов {sum(1 for r in all_rows if r.get('p1'))}", status="success")
 

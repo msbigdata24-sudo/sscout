@@ -32,7 +32,7 @@
 
   const PIPELINE_STEPS = [
     { id: "analyze", title: "Разбор сайта клиента", desc: "Ниша, ключевые слова, гео из контента." },
-    { id: "serp", title: "Поиск в Яндекс и Google", desc: "XMLRiver: по 4 страницы в Яндексе и Google." },
+    { id: "serp", title: "Поиск в Яндекс", desc: "XMLRiver: по 4 страницы выдачи Яндекса." },
     { id: "filter", title: "Фильтры", desc: "Регион, живой сайт, исключения, лимит сайтов." },
     { id: "crawl", title: "Обход сайтов конкурентов", desc: "Главная, контакты, footer, JSON-LD." },
     { id: "catalog", title: "Каталоги и площадки", desc: "KudaGid, 2GIS — если на сайте пусто." },

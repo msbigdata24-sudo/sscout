@@ -24,18 +24,21 @@ DEFAULT_MAX_SITES = 50
 DB_PATH = ROOT / "data" / "signal_scout.db"
 
 AGGREGATOR_DOMAINS = frozenset({
-    "avito.ru", "www.avito.ru",
+    "avito.ru", "www.avito.ru", "m.avito.ru",
     "2gis.ru", "www.2gis.ru",
     "yell.ru", "www.yell.ru",
     "pulscen.ru", "www.pulscen.ru",
     "kudago.com", "www.kudago.com",
-    "yandex.ru", "www.yandex.ru",
+    "yandex.ru", "www.yandex.ru", "ya.ru",
     "google.com", "www.google.com",
-    "wikipedia.org", "ru.wikipedia.org",
-    "youtube.com", "www.youtube.com",
-    "vk.com", "www.vk.com",
-    "t.me", "telegram.me",
-    "zen.yandex.ru", "dzen.ru",
+    "google.ru", "www.google.ru",
+    "wikipedia.org", "ru.wikipedia.org", "uk.wikipedia.org", "en.wikipedia.org",
+    "youtube.com", "www.youtube.com", "youtu.be",
+    "vk.com", "www.vk.com", "m.vk.com",
+    "t.me", "telegram.me", "telegram.org",
+    "zen.yandex.ru", "dzen.ru", "dzen.ru",
+    "facebook.com", "instagram.com", "ok.ru", "mail.ru",
+    "ozon.ru", "wildberries.ru", "market.yandex.ru",
 })
 
 CATALOG_DOMAINS = frozenset({

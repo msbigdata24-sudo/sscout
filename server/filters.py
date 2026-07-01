@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-import httpx
-
 from server.config import AGGREGATOR_DOMAINS, CATALOG_DOMAINS, HTTP_TIMEOUT, USER_AGENT
 from server.phones import extract_phones, extract_phones_from_text
 
@@ -33,7 +31,34 @@ def is_aggregator(domain: str) -> bool:
     if d in AGGREGATOR_DOMAINS:
         return True
     for agg in AGGREGATOR_DOMAINS:
-        if d.endswith("." + agg) or d == agg:
+        agg_clean = agg[4:] if agg.startswith("www.") else agg
+        if d == agg_clean or d.endswith("." + agg_clean):
+            return True
+    # Сервисы Google: support.google.com, accounts.google.com …
+    if ".google." in d or d.endswith(".google.com"):
+        return True
+    return False
+
+
+_TOKEN_RE = re.compile(r"[а-яёa-z]{4,}", re.IGNORECASE)
+
+
+def serp_hit_relevant(meta: dict, queries: list[str], niche: str) -> bool:
+    """Сниппет должен быть по теме запроса (опалубка и т.д.), иначе это мусор из выдачи."""
+    blob = " ".join([
+        str(meta.get("title") or ""),
+        str(meta.get("snippet") or ""),
+        str(meta.get("domain") or ""),
+    ]).lower()
+    tokens: set[str] = set()
+    for q in queries:
+        tokens.update(t.lower() for t in _TOKEN_RE.findall(q))
+    if niche:
+        tokens.update(t.lower() for t in _TOKEN_RE.findall(niche))
+    for token in tokens:
+        if len(token) >= 4 and token in blob:
+            return True
+        if len(token) >= 5 and token[:5] in blob:
             return True
     return False
 

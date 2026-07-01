@@ -158,14 +158,8 @@ async def search_via_xmlriver(
             except SerpError:
                 if page == 0:
                     raise
-            try:
-                hits.extend(await _xmlriver_request(
-                    client, XMLRIVER_GOOGLE_URL, user, key, query, page + 1,
-                    engine="google",
-                    extra={"lr": "RU", "country": 2643, "device": "desktop"},
-                ))
-            except SerpError:
-                pass
+            # Google через XMLRiver без точной геонастройки даёт мусор (YouTube, Wiki…).
+            # Для РФ используем только Яндекс; Google — позже, когда настроен loc в кабинете.
             await asyncio.sleep(0.3)
     return hits
 
@@ -226,7 +220,7 @@ async def collect_serp(
     stats = {
         "provider": "xmlriver",
         "yandex_pages": pages,
-        "google_pages": pages,
+        "google_pages": 0,
         "raw_hits": 0,
         "unique_domains": 0,
         "queries": len(queries),
