@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from datetime import datetime, timezone
+from typing import Any
+
+from server.config import DB_PATH
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class Database:
+    def __init__(self) -> None:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_schema(self) -> None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS runs (
+                        id TEXT PRIMARY KEY,
+                        status TEXT NOT NULL,
+                        brief_json TEXT NOT NULL,
+                        pipeline_json TEXT,
+                        results_json TEXT,
+                        error TEXT,
+                        is_demo INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def create_run(self, run_id: str, brief: dict[str, Any]) -> None:
+        now = _utc_now()
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO runs (id, status, brief_json, pipeline_json, results_json, error, is_demo, created_at, updated_at)
+                    VALUES (?, 'pending', ?, '{}', '[]', NULL, 0, ?, ?)
+                    """,
+                    (run_id, json.dumps(brief, ensure_ascii=False), now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def update_run(
+        self,
+        run_id: str,
+        *,
+        status: str | None = None,
+        pipeline: dict[str, Any] | None = None,
+        results: list[dict[str, Any]] | None = None,
+        error: str | None = None,
+        is_demo: bool | None = None,
+    ) -> None:
+        fields: list[str] = ["updated_at = ?"]
+        values: list[Any] = [_utc_now()]
+        if status is not None:
+            fields.append("status = ?")
+            values.append(status)
+        if pipeline is not None:
+            fields.append("pipeline_json = ?")
+            values.append(json.dumps(pipeline, ensure_ascii=False))
+        if results is not None:
+            fields.append("results_json = ?")
+            values.append(json.dumps(results, ensure_ascii=False))
+        if error is not None:
+            fields.append("error = ?")
+            values.append(error)
+        if is_demo is not None:
+            fields.append("is_demo = ?")
+            values.append(1 if is_demo else 0)
+        values.append(run_id)
+        sql = f"UPDATE runs SET {', '.join(fields)} WHERE id = ?"
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(sql, values)
+                conn.commit()
+            finally:
+                conn.close()
+
+    def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    "SELECT id, status, brief_json, results_json, created_at, updated_at, is_demo "
+                    "FROM runs ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            finally:
+                conn.close()
+        out = []
+        for row in rows:
+            brief = json.loads(row["brief_json"])
+            results = json.loads(row["results_json"] or "[]")
+            out.append({
+                "id": row["id"],
+                "status": row["status"],
+                "client_name": brief.get("clientName", ""),
+                "client_site": brief.get("clientSite", ""),
+                "sites_count": len(results),
+                "phones_count": sum(1 for r in results if r.get("p1")),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "is_demo": bool(row["is_demo"]),
+            })
+        return out
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+            finally:
+                conn.close()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "status": row["status"],
+            "brief": json.loads(row["brief_json"]),
+            "pipeline": json.loads(row["pipeline_json"] or "{}"),
+            "results": json.loads(row["results_json"] or "[]"),
+            "error": row["error"],
+            "is_demo": bool(row["is_demo"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+
+db = Database()
