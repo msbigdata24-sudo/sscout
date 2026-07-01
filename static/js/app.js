@@ -178,22 +178,23 @@
     return step ? step.title : "";
   }
 
+  function tickElapsed() {
+    if (!runActive || !runStartedAt) return 0;
+    const sec = Math.floor((Date.now() - runStartedAt) / 1000);
+    const tick = $("#run-elapsed");
+    if (tick) tick.textContent = `${formatElapsed(sec)}`;
+    return sec;
+  }
+
   function startRunTimer() {
     runStartedAt = Date.now();
     runActive = true;
     $("#run-card")?.classList.add("run-active");
     const el = $("#run-elapsed");
-    if (el) {
-      el.hidden = false;
-      el.textContent = "⏱ 0:00";
-    }
+    if (el) el.hidden = false;
+    tickElapsed();
     clearInterval(elapsedTimer);
-    elapsedTimer = setInterval(() => {
-      if (!runActive) return;
-      const sec = Math.floor((Date.now() - runStartedAt) / 1000);
-      const tick = $("#run-elapsed");
-      if (tick) tick.textContent = `⏱ ${formatElapsed(sec)}`;
-    }, 1000);
+    elapsedTimer = setInterval(tickElapsed, 250);
   }
 
   function stopRunTimer() {
@@ -414,6 +415,8 @@
     });
     renderPipeline(state);
 
+    tickElapsed();
+
     let label = meta.current_step_label || "";
     if (!label) {
       const running = PIPELINE_STEPS.find((s) => state[s.id] === "running");
@@ -495,20 +498,42 @@
   async function runPipeline() {
     brief = readForm();
     window.SSStorage.saveBrief(brief);
+
+    $("#btn-start").disabled = true;
+    $("#btn-stop").disabled = false;
+    startRunTimer();
+    setProgressUI(1, "Проверка сервера…", "running");
+    renderLiveLogs(null, true);
+
     const health = await checkApi();
-    if (!apiOnline) return toast("Запустите run.ps1");
+    if (!apiOnline) {
+      stopRunTimer();
+      $("#btn-start").disabled = false;
+      $("#btn-stop").disabled = true;
+      return toast("Запустите run.ps1");
+    }
     if (!isSearchConfigured(health, brief)) {
+      stopRunTimer();
+      $("#btn-start").disabled = false;
+      $("#btn-stop").disabled = true;
       return toast("Укажите ID и ключ XMLRiver в брифе или в .env");
     }
 
     if (Notification.permission === "default") Notification.requestPermission();
 
-    $("#btn-start").disabled = true;
-    $("#btn-stop").disabled = false;
-    startRunTimer();
     setProgressUI(2, "Отправка брифа на сервер…", "running");
     applyPipeline({}, 2, { waiting: true, current_step_label: "Запуск…" });
-    renderLiveLogs(null, true);
+
+    const waitUi = setInterval(() => {
+      if (!runActive) {
+        clearInterval(waitUi);
+        return;
+      }
+      const sec = tickElapsed();
+      if (!currentRunId) {
+        setProgressUI(2, `Ожидание сервера… ${sec} сек`, "running");
+      }
+    }, 500);
 
     try {
       const res = await fetch(`${API_BASE}/api/run`, {
@@ -516,6 +541,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(brief),
       });
+      clearInterval(waitUi);
       const payload = await res.json();
       if (!res.ok) {
         const err = payload.detail;
@@ -531,6 +557,7 @@
       }), 1500);
       await pollRun(currentRunId);
     } catch (e) {
+      clearInterval(waitUi);
       stopRunTimer();
       toast(e.message);
       $("#btn-start").disabled = false;
