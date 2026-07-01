@@ -485,6 +485,32 @@
     }
   }
 
+  async function parseApiResponse(res) {
+    const text = await res.text();
+    if (!text) return { ok: res.ok, data: {} };
+    try {
+      return { ok: res.ok, data: JSON.parse(text) };
+    } catch (_) {
+      const snippet = text.replace(/\s+/g, " ").slice(0, 120);
+      throw new Error(
+        res.ok
+          ? "Сервер вернул неверный ответ"
+          : `Ошибка сервера (${res.status}): ${snippet || "нет данных"}`
+      );
+    }
+  }
+
+  function resetRunUi(message) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    stopRunTimer();
+    currentRunId = null;
+    $("#btn-start").disabled = !brief?.clientSite;
+    $("#btn-stop").disabled = true;
+    if (message) {
+      setProgressUI(0, message, "error");
+      renderLiveLogs([{ ts: "--:--:--", msg: message, status: "error" }], false);
+    }
   function enableResultsUI() {
     $("#table-search").disabled = false;
     $("#status-filter").disabled = false;
@@ -507,15 +533,11 @@
 
     const health = await checkApi();
     if (!apiOnline) {
-      stopRunTimer();
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      resetRunUi("Сервер офлайн");
       return toast("Запустите run.ps1");
     }
     if (!isSearchConfigured(health, brief)) {
-      stopRunTimer();
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      resetRunUi("Нужен ключ XMLRiver");
       return toast("Укажите ID и ключ XMLRiver в брифе или в .env");
     }
 
@@ -542,10 +564,10 @@
         body: JSON.stringify(brief),
       });
       clearInterval(waitUi);
-      const payload = await res.json();
-      if (!res.ok) {
+      const { ok, data: payload } = await parseApiResponse(res);
+      if (!ok) {
         const err = payload.detail;
-        throw new Error(typeof err === "string" ? err : "Ошибка запуска");
+        throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка запуска");
       }
       currentRunId = payload.run_id;
       isLiveRun = true;
@@ -558,10 +580,8 @@
       await pollRun(currentRunId);
     } catch (e) {
       clearInterval(waitUi);
-      stopRunTimer();
-      toast(e.message);
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      resetRunUi(e.message || "Не удалось запустить сбор");
+      toast(e.message || "Ошибка запуска");
     }
   }
 
@@ -680,12 +700,12 @@
     $("#client-site").addEventListener("blur", previewNiche);
     $("#btn-start").addEventListener("click", runPipeline);
     $("#btn-stop").addEventListener("click", async () => {
-      if (currentRunId) await fetch(`${API_BASE}/api/run/${currentRunId}/stop`, { method: "POST" });
-      clearInterval(pollTimer);
-      stopRunTimer();
-      $("#btn-stop").disabled = true;
-      $("#btn-start").disabled = false;
-      setProgressUI(0, "Остановлено", "stopped");
+      if (currentRunId) {
+        try {
+          await fetch(`${API_BASE}/api/run/${currentRunId}/stop`, { method: "POST" });
+        } catch (_) {}
+      }
+      resetRunUi("Остановлено");
       toast("Остановлено");
     });
 

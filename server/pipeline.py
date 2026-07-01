@@ -293,7 +293,7 @@ def stop_pipeline(run_id: str) -> None:
     _running[run_id] = False
 
 
-def start_pipeline_background(brief: dict[str, Any]) -> str:
+async def start_pipeline_background(brief: dict[str, Any]) -> str:
     run_id = uuid.uuid4().hex[:12]
     db.create_run(run_id, brief)
     asyncio.create_task(run_pipeline(run_id, brief))

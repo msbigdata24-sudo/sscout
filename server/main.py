@@ -79,7 +79,7 @@ async def preview_site(url: str = Query(..., min_length=4)):
 
 
 @app.post("/api/run")
-def api_start_run(brief: BriefModel):
+async def api_start_run(brief: BriefModel):
     if not brief.clientSite.strip():
         raise HTTPException(400, "Укажите сайт клиента")
     if not _search_ready(brief):
@@ -88,7 +88,7 @@ def api_start_run(brief: BriefModel):
             "Укажите ID и API-ключ XMLRiver в брифе (xmlriver.com) "
             "или YANDEX_XML_USER / YANDEX_XML_KEY в .env",
         )
-    run_id = start_pipeline_background(brief.model_dump())
+    run_id = await start_pipeline_background(brief.model_dump())
     return {"run_id": run_id, "status": "pending"}
 
 
