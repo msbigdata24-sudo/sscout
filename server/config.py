@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-SERPAPI_KEY = os.getenv("SERPAPI_KEY", "").strip()
+XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
+XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()
+YANDEX_XML_USER = os.getenv("YANDEX_XML_USER", "").strip()
+YANDEX_XML_KEY = os.getenv("YANDEX_XML_KEY", "").strip()
 SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
 SCRAPINGFISH_API_KEY = os.getenv("SCRAPINGFISH_API_KEY", "").strip()
 PORT = int(os.getenv("SIGNAL_SCOUT_PORT", "8765"))

@@ -18,7 +18,7 @@ from server.filters import (
     try_catalog_page,
 )
 from server.phones import domain_from_url, pick_phones_enriched, validate_phone
-from server.serp import SerpError, collect_serp, group_hits_by_domain
+from server.serp import SerpError, collect_serp, group_hits_by_domain, parse_xmlriver_credentials
 
 PIPELINE_STEPS = ["analyze", "serp", "filter", "crawl", "catalog", "dedup"]
 _running: dict[str, bool] = {}
@@ -112,16 +112,32 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
         catalog_urls: dict[str, str] = {}
 
         if "serp" in sources:
-            serp_hits, serp_stats = await collect_serp(queries, pages=SERP_PAGES)
+            xr_user, xr_key = parse_xmlriver_credentials(
+                api_user=brief.get("xmlRiverUser", ""),
+                api_key=brief.get("apiKey", ""),
+            )
+            serp_hits, serp_stats = await collect_serp(
+                queries,
+                pages=SERP_PAGES,
+                xmlriver_user=xr_user,
+                xmlriver_key=xr_key,
+                regions_text=brief.get("regions", ""),
+                max_results=max(50, max_sites * 4),
+            )
             for hit in serp_hits:
                 if is_catalog_domain(hit["domain"]):
                     catalog_urls[hit["domain"]] = hit["url"]
 
         _set_step(
             pipeline, "serp", "done",
-            f"Доменов {serp_stats.get('unique_domains', 0)} · сырьевых попаданий {serp_stats.get('raw_hits', 0)}",
+            f"XMLRiver · Яндекс+Google · {SERP_PAGES} стр. · "
+            f"доменов {serp_stats.get('unique_domains', 0)}",
         )
-        _log(pipeline, f"SERP завершён · уникальных доменов {serp_stats.get('unique_domains', 0)}", status="success")
+        _log(
+            pipeline,
+            f"Поиск XMLRiver · доменов {serp_stats.get('unique_domains', 0)}",
+            status="success",
+        )
         await _persist(run_id, pipeline)
 
         grouped = group_hits_by_domain(serp_hits)

@@ -8,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, SERPAPI_KEY
+from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
+from server.serp import parse_xmlriver_credentials
 from server.crawler import analyze_client_site
 from server.db import db
 from server.pipeline import start_pipeline_background, stop_pipeline
@@ -34,6 +35,8 @@ class BriefModel(BaseModel):
     phoneFilter: str = "business"
     sources: list[str] = Field(default_factory=lambda: ["serp", "site", "catalog"])
     checkAlive: bool = True
+    xmlRiverUser: str = ""
+    apiKey: str = ""
     maxSites: int = Field(default=50, ge=10, le=200)
     crawlDepth: int = Field(default=2, ge=1, le=5)
     requestDelayMs: int = Field(default=500, ge=0, le=5000)
@@ -42,12 +45,25 @@ class BriefModel(BaseModel):
 
 @app.get("/api/health")
 def health():
+    user, key = parse_xmlriver_credentials(api_user=XMLRIVER_USER, api_key=XMLRIVER_KEY)
     return {
         "ok": True,
-        "serp_configured": bool(SERPAPI_KEY),
+        "search_provider": "xmlriver",
+        "xmlriver_configured": bool(user and key),
+        "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
         "scraping_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
         "port": PORT,
     }
+
+
+def _search_ready(brief: BriefModel) -> bool:
+    user, key = parse_xmlriver_credentials(
+        api_user=brief.xmlRiverUser or XMLRIVER_USER,
+        api_key=brief.apiKey or XMLRIVER_KEY,
+    )
+    if user and key:
+        return True
+    return bool(YANDEX_XML_USER and YANDEX_XML_KEY)
 
 
 @app.get("/api/preview")
@@ -66,8 +82,12 @@ async def preview_site(url: str = Query(..., min_length=4)):
 def api_start_run(brief: BriefModel):
     if not brief.clientSite.strip():
         raise HTTPException(400, "Укажите сайт клиента")
-    if not SERPAPI_KEY:
-        raise HTTPException(400, "Нет ключа SERPAPI_KEY в .env")
+    if not _search_ready(brief):
+        raise HTTPException(
+            400,
+            "Укажите ID и API-ключ XMLRiver в брифе (xmlriver.com) "
+            "или YANDEX_XML_USER / YANDEX_XML_KEY в .env",
+        )
     run_id = start_pipeline_background(brief.model_dump())
     return {"run_id": run_id, "status": "pending"}
 

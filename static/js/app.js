@@ -32,7 +32,7 @@
 
   const PIPELINE_STEPS = [
     { id: "analyze", title: "Разбор сайта клиента", desc: "Ниша, ключевые слова, гео из контента." },
-    { id: "serp", title: "Поиск в Яндекс и Google", desc: "По 4 страницы выдачи в каждой системе." },
+    { id: "serp", title: "Поиск в Яндекс и Google", desc: "XMLRiver: по 4 страницы в Яндексе и Google." },
     { id: "filter", title: "Фильтры", desc: "Регион, живой сайт, исключения, лимит сайтов." },
     { id: "crawl", title: "Обход сайтов конкурентов", desc: "Главная, контакты, footer, JSON-LD." },
     { id: "catalog", title: "Каталоги и площадки", desc: "KudaGid, 2GIS — если на сайте пусто." },
@@ -68,12 +68,6 @@
     return d.length === 11 && d.startsWith("7") ? d : raw;
   }
 
-  function maskPhone(digits) {
-    const d = formatPhone(digits);
-    if (d.length !== 11) return "—";
-    return `${d.slice(0, 2)} (***) ***-${d.slice(9, 11)}`;
-  }
-
   function phoneTypeLabel(t) {
     return t === "mobile" ? "мобильный" : t === "city" ? "городской" : "";
   }
@@ -90,15 +84,13 @@
 
   function renderPhoneCell(phone, type, valid) {
     if (!phone) return '<span class="phone phone-empty">—</span>';
-    const revealed = window.SSStorage.getRevealed().has(phone);
     const cls = type === "mobile" ? "phone-mobile" : type === "city" ? "phone-city" : "";
     const invalid = valid === false ? " phone-invalid" : "";
-    const shown = revealed ? formatPhone(phone) : maskPhone(phone);
+    const shown = formatPhone(phone);
     const tip = phoneTypeLabel(type) || "номер";
     return `<span class="phone-wrap">
       <span class="phone ${cls}${invalid}" title="${tip}">${shown}</span>
-      <button type="button" class="btn-mini" data-copy="${formatPhone(phone)}" title="Копировать">⧉</button>
-      <button type="button" class="btn-mini" data-reveal="${formatPhone(phone)}" title="Показать">${revealed ? "🙈" : "👁"}</button>
+      <button type="button" class="btn-mini" data-copy="${shown}" title="Копировать">⧉</button>
     </span>`;
   }
 
@@ -119,6 +111,8 @@
       crawlDepth: parseInt($("#crawl-depth").value, 10) || 2,
       requestDelayMs: parseInt($("#request-delay").value, 10) || 500,
       useProxy: $("#use-proxy").checked,
+      xmlRiverUser: $("#xml-river-user").value.trim(),
+      apiKey: $("#api-key").value.trim(),
     };
   }
 
@@ -138,6 +132,8 @@
     $("#request-delay").value = data.requestDelayMs ?? 500;
     $("#use-proxy").checked = !!data.useProxy;
     $("#check-alive").checked = data.checkAlive !== false;
+    $("#xml-river-user").value = data.xmlRiverUser || "";
+    $("#api-key").value = data.apiKey || "";
     const src = data.sources || ["serp", "site"];
     $$("#sources option").forEach((o) => {
       o.selected = src.includes(o.value);
@@ -286,12 +282,6 @@
         toast("Скопировано");
       });
     });
-    body.querySelectorAll("[data-reveal]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        window.SSStorage.toggleRevealed(btn.dataset.reveal);
-        renderTable(results);
-      });
-    });
     body.querySelectorAll(".status-cell").forEach((cell) => {
       cell.addEventListener("click", () => cycleStatus(cell.dataset.site));
     });
@@ -320,6 +310,13 @@
       <div class="stat"><div class="stat-value">${excluded}</div><div class="stat-label">Исключено</div></div>`;
   }
 
+  function isSearchConfigured(health, b) {
+    if ((b.xmlRiverUser || "").trim() && (b.apiKey || "").trim()) return true;
+    if (health?.xmlriver_configured) return true;
+    if (health?.yandex_xml_fallback) return true;
+    return false;
+  }
+
   async function checkApi() {
     try {
       const res = await fetch(`${API_BASE}/api/health`);
@@ -328,11 +325,12 @@
       apiOnline = true;
       const el = $("#api-status");
       const parts = ["Сервер: онлайн"];
-      if (data.serp_configured) parts.push("SERP ✓");
-      else parts.push("нужен SERPAPI_KEY");
+      if (data.xmlriver_configured) parts.push("XMLRiver ✓");
+      else if (data.yandex_xml_fallback) parts.push("Яндекс XML (резерв) ✓");
+      else parts.push("нужен ключ XMLRiver");
       if (data.scraping_configured) parts.push("Scraping ✓");
       el.textContent = parts.join(" · ");
-      el.style.color = data.serp_configured ? "var(--success)" : "var(--warn)";
+      el.style.color = (data.xmlriver_configured || data.yandex_xml_fallback) ? "var(--success)" : "var(--warn)";
       return data;
     } catch (_) {
       apiOnline = false;
@@ -413,7 +411,9 @@
     window.SSStorage.saveBrief(brief);
     const health = await checkApi();
     if (!apiOnline) return toast("Запустите run.ps1");
-    if (!health?.serp_configured) return toast("Добавьте SERPAPI_KEY в .env");
+    if (!isSearchConfigured(health, brief)) {
+      return toast("Укажите ID и ключ XMLRiver в брифе или в .env");
+    }
 
     if (Notification.permission === "default") Notification.requestPermission();
 

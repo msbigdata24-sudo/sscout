@@ -644,7 +644,18 @@
           </div>
 
           <div class="card">
-            <div class="card-title">РџРѕРёСЃРє Рё С„РёР»СЊС‚СЂС‹</div>
+            <div class="card-title">Поиск и фильтры</div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="xml-river-user">ID пользователя XMLRiver</label>
+                <input type="text" id="xml-river-user" name="xmlRiverUser" placeholder="Числовой ID из личного кабинета">
+              </div>
+              <div class="field">
+                <label for="api-key">API-ключ для поиска (XMLRiver)</label>
+                <input type="text" id="api-key" name="apiKey" placeholder="Введите ключ от XMLRiver">
+                <p class="hint">Получить можно на xmlriver.com. Стоимость ~25₽ за 1000 запросов. Либо «ID:ключ» только в поле ключа.</p>
+              </div>
+            </div>
             <div class="field">
               <label for="queries">РџРѕРёСЃРєРѕРІС‹Рµ Р·Р°РїСЂРѕСЃС‹ (РїРѕ РѕРґРЅРѕРјСѓ РЅР° СЃС‚СЂРѕРєСѓ)</label>
               <textarea id="queries" name="queries" rows="5"></textarea>
@@ -683,7 +694,7 @@
               <div class="field">
                 <label>Р”РѕРї. РёСЃС‚РѕС‡РЅРёРєРё</label>
                 <select id="sources" name="sources" multiple size="4">
-                  <option value="serp" selected>РЇРЅРґРµРєСЃ / Google (SERP)</option>
+                  <option value="serp" selected>Яндекс / Google (XMLRiver)</option>
                   <option value="site" selected>РЎР°Р№С‚С‹ РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ</option>
                   <option value="catalog">РљР°С‚Р°Р»РѕРіРё (2GIS, KudaGid)</option>
                 </select>
