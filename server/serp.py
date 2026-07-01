@@ -9,8 +9,10 @@ from server.config import SERP_PAGES, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KE
 from server.phones import domain_from_url
 
 YANDEX_XML_URL = "https://yandex.ru/search/xml"
-XMLRIVER_YANDEX_URL = "http://xmlriver.com/yandex/xml"
-XMLRIVER_GOOGLE_URL = "http://xmlriver.com/search/xml"
+XMLRIVER_YANDEX_URL = "https://xmlriver.com/yandex/xml"
+XMLRIVER_GOOGLE_URL = "https://xmlriver.com/search/xml"
+SERP_RETRY_DELAY_SEC = 8
+SERP_MAX_RETRIES = 3
 
 _REGION_LR = {
     "москва": 213,
@@ -62,8 +64,12 @@ def _parse_xmlriver_response(xml_text: str, *, engine: str, query: str, page: in
         raise SerpError(f"XMLRiver: неверный XML ({exc})") from exc
 
     err = root.find(".//error")
-    if err is not None and (err.text or "").strip():
-        raise SerpError(f"XMLRiver: {err.text.strip()}")
+    if err is not None and ((err.text or "").strip() or err.get("code")):
+        code = (err.get("code") or "").strip()
+        text = (err.text or "").strip() or f"код {code}"
+        if code:
+            raise SerpError(f"XMLRiver [{code}]: {text}")
+        raise SerpError(f"XMLRiver: {text}")
 
     hits: list[dict] = []
     for group in root.findall(".//group"):
@@ -106,13 +112,28 @@ async def _xmlriver_request(
         "query": query,
         "page": api_page,
         "groupby": 10,
+        "format": "xml",
     }
     if extra:
         params.update(extra)
-    resp = await client.get(base_url, params=params)
-    if resp.status_code >= 400:
-        raise SerpError(f"XMLRiver HTTP {resp.status_code}")
-    return _parse_xmlriver_response(resp.text, engine=engine, query=query, page=api_page)
+
+    last_err: SerpError | None = None
+    for attempt in range(SERP_MAX_RETRIES):
+        resp = await client.get(base_url, params=params)
+        if resp.status_code >= 400:
+            raise SerpError(f"XMLRiver HTTP {resp.status_code}")
+        try:
+            return _parse_xmlriver_response(resp.text, engine=engine, query=query, page=api_page)
+        except SerpError as exc:
+            last_err = exc
+            retryable = "[500]" in str(exc) or "[202]" in str(exc) or "[203]" in str(exc)
+            if retryable and attempt + 1 < SERP_MAX_RETRIES:
+                await asyncio.sleep(SERP_RETRY_DELAY_SEC)
+                continue
+            raise
+    if last_err:
+        raise last_err
+    return []
 
 
 async def _yandex_xml_fallback(
@@ -145,13 +166,14 @@ async def search_via_xmlriver(
     pages: int = SERP_PAGES,
     lr: int | None = None,
 ) -> list[dict]:
+    user, key = parse_xmlriver_credentials(api_user=user, api_key=key)
     if not user or not key:
-        raise SerpError("Укажите ID и API-ключ XMLRiver в брифе")
+        raise SerpError("Укажите ID и API-ключ XMLRiver в брифе или в Render (XMLRIVER_USER / XMLRIVER_KEY)")
 
     hits: list[dict] = []
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for page in range(pages):
-            y_extra: dict = {"lang": "ru", "domain": "ru", "device": "desktop"}
+            y_extra: dict = {"lang": "ru", "domain": "ru", "device": "desktop", "format": "xml"}
             if lr:
                 y_extra["lr"] = lr
             try:
@@ -162,10 +184,29 @@ async def search_via_xmlriver(
             except SerpError:
                 if page == 0:
                     raise
-            # Google через XMLRiver без точной геонастройки даёт мусор (YouTube, Wiki…).
-            # Для РФ используем только Яндекс; Google — позже, когда настроен loc в кабинете.
             await asyncio.sleep(0.3)
     return hits
+
+
+async def probe_xmlriver(
+    *,
+    xmlriver_user: str = "",
+    xmlriver_key: str = "",
+    query: str = "аренда опалубки",
+) -> dict:
+    """Проверка ключей XMLRiver одним тестовым запросом."""
+    user, key = parse_xmlriver_credentials(api_user=xmlriver_user, api_key=xmlriver_key)
+    if not user or not key:
+        return {"ok": False, "error": "Ключи не заданы (бриф или XMLRIVER_USER / XMLRIVER_KEY на Render)"}
+    try:
+        hits = await search_via_xmlriver(query, user=user, key=key, pages=1, lr=1)
+        return {
+            "ok": True,
+            "hits": len(hits),
+            "sample_domains": [h["domain"] for h in hits[:5]],
+        }
+    except SerpError as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 async def search_competitors(
@@ -178,11 +219,13 @@ async def search_competitors(
     pages: int = SERP_PAGES,
 ) -> list[dict]:
     lr = query_to_lr(query, regions_text)
+    last_err: SerpError | None = None
     try:
         results = await search_via_xmlriver(
             query, user=xmlriver_user, key=xmlriver_key, pages=pages, lr=lr,
         )
-    except SerpError:
+    except SerpError as exc:
+        last_err = exc
         results = []
 
     if not results:
@@ -194,9 +237,10 @@ async def search_competitors(
                     break
 
     if not results:
+        detail = f" Причина: {last_err}" if last_err else ""
         raise SerpError(
-            "Поиск недоступен: проверьте XMLRiver (ID + ключ) "
-            "или задайте YANDEX_XML_USER / YANDEX_XML_KEY в .env"
+            "Поиск недоступен: проверьте XMLRiver (ID + ключ, баланс, формат XML в кабинете)"
+            f" или задайте YANDEX_XML_USER / YANDEX_XML_KEY в .env.{detail}"
         )
 
     seen: set[tuple[str, str]] = set()

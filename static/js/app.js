@@ -391,12 +391,32 @@
       apiOnline = true;
       const el = $("#api-status");
       const parts = ["Сервер: онлайн"];
-      if (data.xmlriver_configured) parts.push("XMLRiver ✓");
-      else if (data.yandex_xml_fallback) parts.push("Яндекс XML (резерв) ✓");
-      else parts.push("нужен ключ XMLRiver");
+      const b = readForm();
+      const hasKeys = (b.xmlRiverUser || "").trim() && (b.apiKey || "").trim();
+      if (data.xmlriver_configured || hasKeys) {
+        const q = new URLSearchParams();
+        if (b.xmlRiverUser) q.set("xmlRiverUser", b.xmlRiverUser);
+        if (b.apiKey) q.set("apiKey", b.apiKey);
+        try {
+          const probe = await fetch(`${API_BASE}/api/xmlriver/check?${q}`);
+          const probeData = await probe.json();
+          if (probeData.ok) {
+            parts.push(`XMLRiver ✓ (${probeData.hits} в тесте)`);
+          } else {
+            parts.push(`XMLRiver ✗ ${probeData.error || "ошибка"}`);
+          }
+        } catch (_) {
+          parts.push(data.xmlriver_configured ? "XMLRiver (ключ в Render)" : "XMLRiver ?");
+        }
+      } else if (data.yandex_xml_fallback) {
+        parts.push("Яндекс XML (резерв) ✓");
+      } else {
+        parts.push("нужен ключ XMLRiver");
+      }
       if (data.scraping_configured) parts.push("Scraping ✓");
       el.textContent = parts.join(" · ");
-      el.style.color = (data.xmlriver_configured || data.yandex_xml_fallback) ? "var(--success)" : "var(--warn)";
+      const bad = parts.some((p) => p.includes("✗") || p.includes("нужен"));
+      el.style.color = bad ? "var(--warn)" : "var(--success)";
       return data;
     } catch (_) {
       apiOnline = false;

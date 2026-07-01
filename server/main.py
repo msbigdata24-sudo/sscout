@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
-from server.serp import parse_xmlriver_credentials
+from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site
 from server.db import db
 from server.pipeline import start_pipeline_background, stop_pipeline
@@ -54,6 +54,17 @@ def health():
         "scraping_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
         "port": PORT,
     }
+
+
+@app.get("/api/xmlriver/check")
+async def xmlriver_check(
+    xmlRiverUser: str = Query("", alias="xmlRiverUser"),
+    apiKey: str = Query("", alias="apiKey"),
+):
+    """Тестовый запрос к XMLRiver — показывает реальную ошибку API."""
+    user = xmlRiverUser or XMLRIVER_USER
+    key = apiKey or XMLRIVER_KEY
+    return await probe_xmlriver(xmlriver_user=user, xmlriver_key=key)
 
 
 def _search_ready(brief: BriefModel) -> bool:
