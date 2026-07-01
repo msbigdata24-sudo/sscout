@@ -44,6 +44,9 @@
   let currentRunId = null;
   let isLiveRun = false;
   let pollTimer = null;
+  let elapsedTimer = null;
+  let runStartedAt = 0;
+  let runActive = false;
   let apiOnline = false;
   let tablePage = 1;
   let sortCol = "";
@@ -164,9 +167,71 @@
     }).join("");
   }
 
-  function renderLiveLogs(logs) {
+  function formatElapsed(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function stepTitle(stepId) {
+    const step = PIPELINE_STEPS.find((s) => s.id === stepId);
+    return step ? step.title : "";
+  }
+
+  function startRunTimer() {
+    runStartedAt = Date.now();
+    runActive = true;
+    $("#run-card")?.classList.add("run-active");
+    const el = $("#run-elapsed");
+    if (el) {
+      el.hidden = false;
+      el.textContent = "⏱ 0:00";
+    }
+    clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(() => {
+      if (!runActive) return;
+      const sec = Math.floor((Date.now() - runStartedAt) / 1000);
+      const tick = $("#run-elapsed");
+      if (tick) tick.textContent = `⏱ ${formatElapsed(sec)}`;
+    }, 1000);
+  }
+
+  function stopRunTimer() {
+    runActive = false;
+    clearInterval(elapsedTimer);
+    $("#run-card")?.classList.remove("run-active");
+  }
+
+  function setProgressUI(progress, label, status) {
+    const pct = Math.max(0, Math.min(100, Math.round(progress || 0)));
+    const fill = $("#progress-fill");
+    const bar = $("#progress-bar");
+    const labelEl = $("#progress-label");
+    const pctEl = $("#progress-percent");
+    if (fill) fill.style.width = `${pct}%`;
+    if (bar) bar.setAttribute("aria-valuenow", String(pct));
+    if (pctEl) {
+      pctEl.textContent = `${pct}%`;
+      pctEl.style.color = status === "done" ? "var(--success)" : "var(--accent)";
+    }
+    if (labelEl) {
+      if (status === "done") labelEl.innerHTML = "<strong>Готово!</strong> Переход к результатам…";
+      else if (status === "error") labelEl.innerHTML = "<strong>Ошибка</strong> — см. лог ниже";
+      else if (status === "stopped") labelEl.textContent = "Остановлено";
+      else if (label) labelEl.textContent = label;
+    }
+  }
+
+  function renderLiveLogs(logs, waiting) {
     const box = $("#live-logs");
-    if (!box || !logs?.length) return;
+    if (!box) return;
+    box.classList.toggle("waiting", !!waiting);
+    if (!logs?.length) {
+      box.innerHTML = waiting
+        ? '<div class="log-line">Подключение к серверу, ожидайте…</div>'
+        : '<div class="log-line log-muted">Здесь появятся сообщения по ходу сбора</div>';
+      return;
+    }
     box.innerHTML = logs.slice(-80).map((l) => {
       const cls = l.status === "error" ? "log-err" : l.status === "success" ? "log-ok" : "";
       return `<div class="log-line ${cls}"><span class="log-ts">${l.ts}</span> ${l.msg}</div>`;
@@ -341,15 +406,26 @@
     }
   }
 
-  function applyPipeline(pipeline, progress) {
+  function applyPipeline(pipeline, progress, meta = {}) {
     const state = {};
     PIPELINE_STEPS.forEach((s) => {
       state[s.id] = pipeline[s.id] || "pending";
       if (pipeline[s.id + "Log"]) state[s.id + "Log"] = pipeline[s.id + "Log"];
     });
     renderPipeline(state);
-    $("#progress-fill").style.width = (progress || 0) + "%";
-    renderLiveLogs(pipeline.logs);
+
+    let label = meta.current_step_label || "";
+    if (!label) {
+      const running = PIPELINE_STEPS.find((s) => state[s.id] === "running");
+      if (running) label = `Сейчас: ${running.title}…`;
+      else {
+        const done = PIPELINE_STEPS.filter((s) => state[s.id] === "done").length;
+        if (done > 0 && done < PIPELINE_STEPS.length) label = `Выполнено шагов: ${done} из ${PIPELINE_STEPS.length}`;
+      }
+    }
+    if (meta.status === "done") label = "";
+    setProgressUI(progress, label, meta.status);
+    renderLiveLogs(pipeline.logs, meta.waiting);
   }
 
   function notifyDone(count) {
@@ -363,10 +439,16 @@
     const res = await fetch(`${API_BASE}/api/run/${runId}`);
     if (!res.ok) throw new Error("Статус недоступен");
     const data = await res.json();
-    applyPipeline(data.pipeline || {}, data.progress || 0);
+    const stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    applyPipeline(data.pipeline || {}, data.progress || 0, {
+      status: data.status,
+      current_step_label: stepLabel ? `Сейчас: ${stepLabel}…` : "",
+    });
 
     if (data.status === "done") {
       clearInterval(pollTimer);
+      stopRunTimer();
+      setProgressUI(100, "", "done");
       const rr = await fetch(`${API_BASE}/api/results/${runId}`);
       const payload = await rr.json();
       results = payload.results || [];
@@ -377,7 +459,7 @@
       $("#results-subtitle").textContent = `${brief.clientName} · живой сбор · ${results.length} строк`;
       const phones = results.filter((r) => r.p1).length;
       notifyDone(phones);
-      toast("Сбор завершён");
+      toast(`Сбор завершён за ${formatElapsed(Math.floor((Date.now() - runStartedAt) / 1000))}`);
       setTimeout(() => showPage("results"), 400);
       $("#btn-start").disabled = false;
       $("#btn-stop").disabled = true;
@@ -385,12 +467,16 @@
     }
     if (data.status === "error") {
       clearInterval(pollTimer);
+      stopRunTimer();
+      applyPipeline(data.pipeline || {}, data.progress || 0, { status: "error" });
       toast(data.error || "Ошибка");
       $("#btn-start").disabled = false;
       $("#btn-stop").disabled = true;
     }
     if (data.status === "stopped") {
       clearInterval(pollTimer);
+      stopRunTimer();
+      applyPipeline(data.pipeline || {}, data.progress || 0, { status: "stopped" });
       $("#btn-start").disabled = false;
       $("#btn-stop").disabled = true;
     }
@@ -419,8 +505,10 @@
 
     $("#btn-start").disabled = true;
     $("#btn-stop").disabled = false;
-    applyPipeline({}, 0);
-    $("#live-logs").innerHTML = "";
+    startRunTimer();
+    setProgressUI(2, "Отправка брифа на сервер…", "running");
+    applyPipeline({}, 2, { waiting: true, current_step_label: "Запуск…" });
+    renderLiveLogs(null, true);
 
     try {
       const res = await fetch(`${API_BASE}/api/run`, {
@@ -437,11 +525,13 @@
       isLiveRun = true;
       pollTimer = setInterval(() => pollRun(currentRunId).catch((e) => {
         clearInterval(pollTimer);
+        stopRunTimer();
         toast(e.message);
         $("#btn-start").disabled = false;
-      }), 2000);
+      }), 1500);
       await pollRun(currentRunId);
     } catch (e) {
+      stopRunTimer();
       toast(e.message);
       $("#btn-start").disabled = false;
       $("#btn-stop").disabled = true;
@@ -533,6 +623,8 @@
     results = window.SSStorage.loadResults();
     fillForm(brief);
     renderPipeline({});
+    setProgressUI(0, "Нажмите «Запустить сбор»");
+    renderLiveLogs(null, false);
     updateRunUI();
     if (results.length) {
       enableResultsUI();
@@ -563,8 +655,10 @@
     $("#btn-stop").addEventListener("click", async () => {
       if (currentRunId) await fetch(`${API_BASE}/api/run/${currentRunId}/stop`, { method: "POST" });
       clearInterval(pollTimer);
+      stopRunTimer();
       $("#btn-stop").disabled = true;
       $("#btn-start").disabled = false;
+      setProgressUI(0, "Остановлено", "stopped");
       toast("Остановлено");
     });
 

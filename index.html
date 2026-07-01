@@ -478,11 +478,12 @@
     a.site-link:hover { text-decoration: underline; }
 
     .progress-bar {
-      height: 6px;
+      height: 14px;
       background: var(--surface-2);
       border-radius: 999px;
       overflow: hidden;
-      margin: 16px 0;
+      margin: 8px 0 16px;
+      border: 1px solid var(--border);
     }
 
     .progress-fill {
@@ -490,7 +491,42 @@
       background: linear-gradient(90deg, var(--accent), var(--success));
       border-radius: 999px;
       width: 0%;
-      transition: width 0.4s ease;
+      min-width: 0;
+      transition: width 0.5s ease;
+    }
+
+    .progress-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .progress-head strong { color: var(--text); font-weight: 600; }
+
+    .progress-percent {
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      font-weight: 700;
+      min-width: 3em;
+      text-align: right;
+    }
+
+    .run-elapsed {
+      font-variant-numeric: tabular-nums;
+      font-family: ui-monospace, monospace;
+      color: var(--warn);
+    }
+
+    .run-active .progress-bar { box-shadow: 0 0 0 1px rgba(61, 139, 253, 0.25); }
+
+    .log-panel.waiting {
+      color: var(--muted);
+      font-style: italic;
     }
 
     .empty-state {
@@ -529,6 +565,7 @@
       font-size: 11px;
     }
     .log-line { padding: 2px 0; color: var(--muted); }
+    .log-line.log-muted { opacity: 0.75; }
     .log-line.log-ok { color: var(--success); }
     .log-line.log-err { color: var(--danger); }
     .log-ts { color: var(--accent); margin-right: 6px; }
@@ -726,9 +763,14 @@
           <p id="run-subtitle">Сначала сохраните бриф на вкладке «Бриф клиента».</p>
         </header>
 
-        <div class="card">
+        <div class="card" id="run-card">
           <div class="card-title">Прогресс</div>
-          <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-head">
+            <span id="progress-label">Нажмите «Запустить сбор»</span>
+            <span class="run-elapsed" id="run-elapsed" hidden>⏱ 0:00</span>
+            <span class="progress-percent" id="progress-percent">0%</span>
+          </div>
+          <div class="progress-bar" id="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Прогресс сбора">
             <div class="progress-fill" id="progress-fill"></div>
           </div>
           <div class="pipeline" id="pipeline"></div>

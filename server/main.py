@@ -92,21 +92,44 @@ def api_start_run(brief: BriefModel):
     return {"run_id": run_id, "status": "pending"}
 
 
+PIPELINE_STEP_IDS = ("analyze", "serp", "filter", "crawl", "catalog", "dedup")
+
+
+def _calc_progress(pipeline: dict, status: str) -> tuple[int, str]:
+    if status == "done":
+        return 100, ""
+    steps = list(PIPELINE_STEP_IDS)
+    progress = 0
+    current = ""
+    for step in steps:
+        st = pipeline.get(step, "pending")
+        if st == "done":
+            progress += 100 // len(steps)
+        elif st == "running":
+            current = step
+            progress += 100 // (len(steps) * 2)
+            if step == "crawl":
+                site_status = pipeline.get("site_status") or {}
+                total = max(1, len(site_status))
+                done_sites = sum(1 for v in site_status.values() if v in ("success", "error", "skip"))
+                progress += int((100 // len(steps)) * 0.5 * done_sites / total)
+    return min(progress, 99 if status in ("running", "pending") else 100), current
+
+
 @app.get("/api/run/{run_id}")
 def api_get_run(run_id: str):
     run = db.get_run(run_id)
     if not run:
         raise HTTPException(404, "Прогон не найден")
     pipeline = run.get("pipeline") or {}
-    done_steps = sum(1 for k, v in pipeline.items() if not k.endswith("Log") and k in {
-        "analyze", "serp", "filter", "crawl", "catalog", "dedup"
-    } and v == "done")
-    progress = int(done_steps / 6 * 100) if pipeline else 0
+    status = run.get("status") or "pending"
+    progress, current_step = _calc_progress(pipeline, status)
     return {
         "id": run["id"],
-        "status": run["status"],
+        "status": status,
         "pipeline": pipeline,
         "progress": progress,
+        "current_step": current_step,
         "logs": pipeline.get("logs") or [],
         "site_status": pipeline.get("site_status") or {},
         "results_count": len(run.get("results") or []),
