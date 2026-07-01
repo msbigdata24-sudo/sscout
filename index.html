@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>РЎРёРіРЅР°Р»-РЎРєР°СѓС‚ вЂ” СЃР±РѕСЂ РєРѕРЅС‚Р°РєС‚РѕРІ РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ | РЎС‚СЂР°С‚РµРёРєСЃ</title>
-  <meta name="description" content="Р’РЅСѓС‚СЂРµРЅРЅРёР№ РёРЅСЃС‚СЂСѓРјРµРЅС‚ РЎС‚СЂР°С‚РµРёРєСЃ: РїРѕРёСЃРє РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ РїРѕ СЃР°Р№С‚Сѓ РєР»РёРµРЅС‚Р°, С„РёР»СЊС‚СЂС‹ РїРѕ СЂРµРіРёРѕРЅСѓ, СЃР±РѕСЂ С‚РµР»РµС„РѕРЅРѕРІ СЃ СЃР°Р№С‚РѕРІ Рё РїР»РѕС‰Р°РґРѕРє.">
+  <title>Сигнал-Скаут — сбор контактов конкурентов | Стратеикс</title>
+  <meta name="description" content="Внутренний инструмент Стратеикс: поиск конкурентов по сайту клиента, фильтры по региону, сбор телефонов с сайтов и площадок.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -572,232 +572,232 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon" aria-hidden="true">рџ“Ў</div>
+        <div class="brand-icon" aria-hidden="true">📡</div>
         <div>
-          <h1>РЎРёРіРЅР°Р»-РЎРєР°СѓС‚</h1>
-          <p>РЎС‚СЂР°С‚РµРёРєСЃ В· MVP</p>
+          <h1>Сигнал-Скаут</h1>
+          <p>Стратеикс · MVP</p>
         </div>
       </div>
 
-      <nav class="nav" aria-label="Р Р°Р·РґРµР»С‹">
-        <button type="button" class="active" data-page="brief">Р‘СЂРёС„ РєР»РёРµРЅС‚Р°</button>
-        <button type="button" data-page="run">Р—Р°РїСѓСЃРє СЃР±РѕСЂР°</button>
-        <button type="button" data-page="results">Р РµР·СѓР»СЊС‚Р°С‚С‹</button>
-        <button type="button" data-page="history">РСЃС‚РѕСЂРёСЏ</button>
+      <nav class="nav" aria-label="Разделы">
+        <button type="button" class="active" data-page="brief">Бриф клиента</button>
+        <button type="button" data-page="run">Запуск сбора</button>
+        <button type="button" data-page="results">Результаты</button>
+        <button type="button" data-page="history">История</button>
       </nav>
 
       <div class="sidebar-foot">
-        РџРёР»РѕС‚: РћРїР°Р»СѓР±РєР°-Р”РѕРјСЃС‚СЂРѕР№<br>
-        <span id="api-status">РЎРµСЂРІРµСЂ: РїСЂРѕРІРµСЂРєР°вЂ¦</span>
+        Пилот: Опалубка-Домстрой<br>
+        <span id="api-status">Сервер: проверка…</span>
       </div>
     </aside>
 
     <main class="main">
-      <!-- Р‘Р РР¤ -->
+      <!-- БРИФ -->
       <section class="page active" id="page-brief">
         <header class="page-head">
-          <span class="pilot-badge">в—Џ РџРёР»РѕС‚РЅС‹Р№ РєР»РёРµРЅС‚ Р·Р°РіСЂСѓР¶РµРЅ</span>
-          <h2>Р‘СЂРёС„ РЅР° СЃР±РѕСЂ</h2>
-          <p>РЎР°Р№С‚ РєР»РёРµРЅС‚Р°, СЂРµРіРёРѕРЅС‹ Рё СѓСЃР»РѕРІРёСЏ РѕС‚Р±РѕСЂР° РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ. Р”Р°РЅРЅС‹Рµ СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РІ Р±СЂР°СѓР·РµСЂРµ.</p>
+          <span class="pilot-badge">● Пилотный клиент загружен</span>
+          <h2>Бриф на сбор</h2>
+          <p>Сайт клиента, регионы и условия отбора конкурентов. Данные сохраняются в браузере.</p>
         </header>
 
         <form id="brief-form">
           <div class="card">
-            <div class="card-title">РљР»РёРµРЅС‚</div>
+            <div class="card-title">Клиент</div>
             <div class="grid-2">
               <div class="field">
-                <label for="client-name">РќР°Р·РІР°РЅРёРµ РєРѕРјРїР°РЅРёРё</label>
+                <label for="client-name">Название компании</label>
                 <input type="text" id="client-name" name="clientName" required>
               </div>
               <div class="field">
-                <label for="client-site">РЎР°Р№С‚ РєР»РёРµРЅС‚Р°</label>
+                <label for="client-site">Сайт клиента</label>
                 <input type="url" id="client-site" name="clientSite" placeholder="https://..." required>
               </div>
             </div>
             <div class="field">
-              <label for="niche">РќРёС€Р° / С‡С‚Рѕ РїСЂРѕРґР°СЋС‚</label>
+              <label for="niche">Ниша / что продают</label>
               <input type="text" id="niche" name="niche">
               <p class="hint" id="niche-hint"></p>
             </div>
           </div>
 
           <div class="card">
-            <div class="card-title">Р РµРіРёРѕРЅС‹</div>
+            <div class="card-title">Регионы</div>
             <div class="field">
-              <label>Р РµР¶РёРј РѕС‚Р±РѕСЂР°</label>
+              <label>Режим отбора</label>
               <div class="radio-row">
                 <label class="radio-pill">
                   <input type="radio" name="regionMode" value="include" checked>
-                  РўРѕР»СЊРєРѕ СЌС‚Рё СЂРµРіРёРѕРЅС‹
+                  Только эти регионы
                 </label>
                 <label class="radio-pill">
                   <input type="radio" name="regionMode" value="exclude">
-                  Р’СЃРµ, РєСЂРѕРјРµ РїРµСЂРµС‡РёСЃР»РµРЅРЅС‹С…
+                  Все, кроме перечисленных
                 </label>
               </div>
             </div>
             <div class="field">
-              <label for="regions">Р РµРіРёРѕРЅС‹ (С‡РµСЂРµР· Р·Р°РїСЏС‚СѓСЋ)</label>
+              <label for="regions">Регионы (через запятую)</label>
               <textarea id="regions" name="regions" rows="2"></textarea>
-              <p class="hint">РћРґРЅР° СЃС‚СЂРѕРєР° вЂ” РѕРґРёРЅ СЂРµРіРёРѕРЅ РёР»Рё РіРѕСЂРѕРґ СЃ РѕР±Р»Р°СЃС‚СЊСЋ.</p>
+              <p class="hint">Одна строка — один регион или город с областью.</p>
             </div>
           </div>
 
           <div class="card">
-            <div class="card-title">Поиск и фильтры</div>
+            <div class="card-title">  </div>
             <div class="grid-2">
               <div class="field">
-                <label for="xml-river-user">ID пользователя XMLRiver</label>
-                <input type="text" id="xml-river-user" name="xmlRiverUser" placeholder="Числовой ID из личного кабинета">
+                <label for="xml-river-user">ID  XMLRiver</label>
+                <input type="text" id="xml-river-user" name="xmlRiverUser" placeholder=" ID   ">
               </div>
               <div class="field">
-                <label for="api-key">API-ключ для поиска (XMLRiver)</label>
-                <input type="text" id="api-key" name="apiKey" placeholder="Введите ключ от XMLRiver">
+                <label for="api-key">API-   (XMLRiver)</label>
+                <input type="text" id="api-key" name="apiKey" placeholder="   XMLRiver">
                 <p class="hint">Получить можно на xmlriver.com. Стоимость ~25₽ за 1000 запросов. Либо «ID:ключ» только в поле ключа.</p>
               </div>
             </div>
             <div class="field">
-              <label for="queries">РџРѕРёСЃРєРѕРІС‹Рµ Р·Р°РїСЂРѕСЃС‹ (РїРѕ РѕРґРЅРѕРјСѓ РЅР° СЃС‚СЂРѕРєСѓ)</label>
+              <label for="queries">Поисковые запросы (по одному на строку)</label>
               <textarea id="queries" name="queries" rows="5"></textarea>
             </div>
             <div class="field">
-              <label for="exclude-domains">РСЃРєР»СЋС‡РёС‚СЊ РґРѕРјРµРЅС‹ (С‡РµСЂРµР· Р·Р°РїСЏС‚СѓСЋ)</label>
+              <label for="exclude-domains">Исключить домены (через запятую)</label>
               <textarea id="exclude-domains" name="excludeDomains" rows="2"></textarea>
-              <p class="hint">РђРіСЂРµРіР°С‚РѕСЂС‹, РґРёР»РµСЂС‹ РєР»РёРµРЅС‚Р°, С‡СѓР¶РёРµ Р±СЂРµРЅРґС‹.</p>
+              <p class="hint">Агрегаторы, дилеры клиента, чужие бренды.</p>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label>РўРёРї С‚РµР»РµС„РѕРЅРѕРІ</label>
+                <label>Тип телефонов</label>
                 <select id="phone-filter" name="phoneFilter">
-                  <option value="business">РњРѕР±РёР»СЊРЅС‹Рµ + РіРѕСЂРѕРґСЃРєРёРµ (СЂРµРєРѕРјРµРЅРґСѓРµС‚СЃСЏ)</option>
-                  <option value="mobile">РўРѕР»СЊРєРѕ РјРѕР±РёР»СЊРЅС‹Рµ (79вЂ¦)</option>
-                  <option value="city">РўРѕР»СЊРєРѕ РіРѕСЂРѕРґСЃРєРёРµ (495, 499, 812вЂ¦)</option>
-                  <option value="no-800">Р‘РµР· 8-800</option>
+                  <option value="business">Мобильные + городские (рекомендуется)</option>
+                  <option value="mobile">Только мобильные (79…)</option>
+                  <option value="city">Только городские (495, 499, 812…)</option>
+                  <option value="no-800">Без 8-800</option>
                 </select>
               </div>
               <div class="field">
-                <label for="max-sites">РњР°РєСЃРёРјСѓРј СЃР°Р№С‚РѕРІ</label>
+                <label for="max-sites">Максимум сайтов</label>
                 <input type="number" id="max-sites" min="10" max="200" step="10" value="50">
               </div>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label for="crawl-depth">Р“Р»СѓР±РёРЅР° РѕР±С…РѕРґР° (1вЂ“5)</label>
+                <label for="crawl-depth">Глубина обхода (1–5)</label>
                 <input type="number" id="crawl-depth" min="1" max="5" value="2">
               </div>
               <div class="field">
-                <label for="request-delay">Р—Р°РґРµСЂР¶РєР° РјРµР¶РґСѓ Р·Р°РїСЂРѕСЃР°РјРё (РјСЃ)</label>
+                <label for="request-delay">Задержка между запросами (мс)</label>
                 <input type="number" id="request-delay" min="0" max="5000" step="100" value="500">
               </div>
             </div>
             <div class="grid-2">
               <div class="field">
-                <label>Р”РѕРї. РёСЃС‚РѕС‡РЅРёРєРё</label>
+                <label>Доп. источники</label>
                 <select id="sources" name="sources" multiple size="4">
-                  <option value="serp" selected>Яндекс / Google (XMLRiver)</option>
-                  <option value="site" selected>РЎР°Р№С‚С‹ РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ</option>
-                  <option value="catalog">РљР°С‚Р°Р»РѕРіРё (2GIS, KudaGid)</option>
+                  <option value="serp" selected> / Google (XMLRiver)</option>
+                  <option value="site" selected>Сайты конкурентов</option>
+                  <option value="catalog">Каталоги (2GIS, KudaGid)</option>
                 </select>
               </div>
               <div class="field">
                 <label class="radio-pill" style="width:fit-content;margin-top:24px">
                   <input type="checkbox" id="use-proxy" name="useProxy">
-                  РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ ScrapingBee / ScrapingFish
+                  Использовать ScrapingBee / ScrapingFish
                 </label>
                 <label class="radio-pill" style="width:fit-content">
                   <input type="checkbox" id="check-alive" name="checkAlive" checked>
-                  РџСЂРѕРІРµСЂСЏС‚СЊ, С‡С‚Рѕ СЃР°Р№С‚ Р¶РёРІРѕР№ (2026)
+                  Проверять, что сайт живой (2026)
                 </label>
               </div>
             </div>
           </div>
 
           <div class="actions">
-            <button type="submit" class="btn btn-primary">РЎРѕС…СЂР°РЅРёС‚СЊ Р±СЂРёС„</button>
-            <button type="button" class="btn btn-ghost" id="btn-reset-pilot">РЎР±СЂРѕСЃРёС‚СЊ РЅР° РїРёР»РѕС‚Р°</button>
+            <button type="submit" class="btn btn-primary">Сохранить бриф</button>
+            <button type="button" class="btn btn-ghost" id="btn-reset-pilot">Сбросить на пилота</button>
           </div>
         </form>
       </section>
 
-      <!-- Р—РђРџРЈРЎРљ -->
+      <!-- ЗАПУСК -->
       <section class="page" id="page-run">
         <header class="page-head">
-          <h2>Р—Р°РїСѓСЃРє СЃР±РѕСЂР°</h2>
-          <p id="run-subtitle">РЎРЅР°С‡Р°Р»Р° СЃРѕС…СЂР°РЅРёС‚Рµ Р±СЂРёС„ РЅР° РІРєР»Р°РґРєРµ В«Р‘СЂРёС„ РєР»РёРµРЅС‚Р°В».</p>
+          <h2>Запуск сбора</h2>
+          <p id="run-subtitle">Сначала сохраните бриф на вкладке «Бриф клиента».</p>
         </header>
 
         <div class="card">
-          <div class="card-title">РџСЂРѕРіСЂРµСЃСЃ</div>
+          <div class="card-title">Прогресс</div>
           <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
             <div class="progress-fill" id="progress-fill"></div>
           </div>
           <div class="pipeline" id="pipeline"></div>
-          <div class="card-title" style="margin-top:16px">Р›РѕРі РІ СЂРµР°Р»СЊРЅРѕРј РІСЂРµРјРµРЅРё</div>
+          <div class="card-title" style="margin-top:16px">Лог в реальном времени</div>
           <div class="log-panel" id="live-logs"></div>
           <div class="actions">
-            <button type="button" class="btn btn-primary" id="btn-start" disabled>Р—Р°РїСѓСЃС‚РёС‚СЊ СЃР±РѕСЂ</button>
-            <button type="button" class="btn btn-ghost" id="btn-stop" disabled>РћСЃС‚Р°РЅРѕРІРёС‚СЊ</button>
+            <button type="button" class="btn btn-primary" id="btn-start" disabled>Запустить сбор</button>
+            <button type="button" class="btn btn-ghost" id="btn-stop" disabled>Остановить</button>
           </div>
         </div>
       </section>
 
-      <!-- Р Р•Р—РЈР›Р¬РўРђРўР« -->
+      <!-- РЕЗУЛЬТАТЫ -->
       <section class="page" id="page-results">
         <header class="page-head">
-          <span class="demo-banner" id="demo-banner" hidden>Р”РµРјРѕ В· РёСЋРЅСЊ 2026</span>
-          <span class="pilot-badge" id="live-banner" hidden style="background:rgba(61,139,253,0.15);color:var(--accent)">в—Џ Р–РёРІРѕР№ СЃР±РѕСЂ</span>
-          <h2>Р РµР·СѓР»СЊС‚Р°С‚С‹</h2>
-          <p id="results-subtitle">РўР°Р±Р»РёС†Р° РєРѕРЅРєСѓСЂРµРЅС‚РѕРІ Рё РЅР°Р№РґРµРЅРЅС‹С… С‚РµР»РµС„РѕРЅРѕРІ.</p>
+          <span class="demo-banner" id="demo-banner" hidden>Демо · июнь 2026</span>
+          <span class="pilot-badge" id="live-banner" hidden style="background:rgba(61,139,253,0.15);color:var(--accent)">● Живой сбор</span>
+          <h2>Результаты</h2>
+          <p id="results-subtitle">Таблица конкурентов и найденных телефонов.</p>
         </header>
 
         <div class="stats" id="stats" hidden></div>
 
         <div class="card">
           <div class="toolbar">
-            <input type="search" id="table-search" placeholder="РџРѕРёСЃРє РїРѕ СЃР°Р№С‚Сѓ, РЅР°Р·РІР°РЅРёСЋ, С‚РµР»РµС„РѕРЅСѓвЂ¦" disabled>
+            <input type="search" id="table-search" placeholder="Поиск по сайту, названию, телефону…" disabled>
             <select id="status-filter" disabled>
-              <option value="">Р’СЃРµ СЃС‚Р°С‚СѓСЃС‹</option>
-              <option value="РЅР°Р№РґРµРЅ">РќР°Р№РґРµРЅ</option>
-              <option value="Р±РµР· С‚РµР»РµС„РѕРЅР°">Р‘РµР· С‚РµР»РµС„РѕРЅР°</option>
-              <option value="РёСЃРєР»СЋС‡С‘РЅ">РСЃРєР»СЋС‡С‘РЅ</option>
-              <option value="Р°РіСЂРµРіР°С‚РѕСЂ">РђРіСЂРµРіР°С‚РѕСЂ</option>
+              <option value="">Все статусы</option>
+              <option value="найден">Найден</option>
+              <option value="без телефона">Без телефона</option>
+              <option value="исключён">Исключён</option>
+              <option value="агрегатор">Агрегатор</option>
             </select>
             <select id="type-filter" disabled>
-              <option value="">Р’СЃРµ С‚РёРїС‹</option>
-              <option value="mobile">РњРѕР±РёР»СЊРЅС‹Р№</option>
-              <option value="city">Р“РѕСЂРѕРґСЃРєРѕР№</option>
+              <option value="">Все типы</option>
+              <option value="mobile">Мобильный</option>
+              <option value="city">Городской</option>
             </select>
             <select id="region-filter" disabled>
-              <option value="">Р’СЃРµ СЂРµРіРёРѕРЅС‹</option>
+              <option value="">Все регионы</option>
             </select>
-            <label class="radio-pill"><input type="checkbox" id="group-regions"> Р“СЂСѓРїРїРёСЂРѕРІРєР° РїРѕ СЂРµРіРёРѕРЅР°Рј</label>
-            <button type="button" class="btn btn-ghost" id="btn-export" disabled>РЎРєР°С‡Р°С‚СЊ CSV</button>
-            <button type="button" class="btn btn-ghost" id="btn-export-xls" disabled>РЎРєР°С‡Р°С‚СЊ XLS</button>
+            <label class="radio-pill"><input type="checkbox" id="group-regions"> Группировка по регионам</label>
+            <button type="button" class="btn btn-ghost" id="btn-export" disabled>Скачать CSV</button>
+            <button type="button" class="btn btn-ghost" id="btn-export-xls" disabled>Скачать XLS</button>
           </div>
 
           <div class="pager" id="pager" hidden>
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-prev-page">в†ђ</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-prev-page">←</button>
             <span id="pagination-text"></span>
-            <button type="button" class="btn btn-ghost btn-sm" id="btn-next-page">в†’</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-next-page">→</button>
           </div>
 
           <div id="results-empty" class="empty-state">
-            <strong>РџРѕРєР° РїСѓСЃС‚Рѕ</strong>
-            Р—Р°РїСѓСЃС‚РёС‚Рµ СЃР±РѕСЂ РЅР° РІРєР»Р°РґРєРµ В«Р—Р°РїСѓСЃРє СЃР±РѕСЂР°В» вЂ” Р·РґРµСЃСЊ РїРѕСЏРІРёС‚СЃСЏ С‚Р°Р±Р»РёС†Р°.
+            <strong>Пока пусто</strong>
+            Запустите сбор на вкладке «Запуск сбора» — здесь появится таблица.
           </div>
 
           <div class="table-wrap" id="table-wrap" hidden>
             <table>
               <thead>
                 <tr>
-                  <th data-sort="site">РЎР°Р№С‚</th>
-                  <th data-sort="name">РљРѕРјРїР°РЅРёСЏ</th>
-                  <th data-sort="region">Р РµРіРёРѕРЅ</th>
-                  <th data-sort="offer">РЈСЃР»СѓРіР°</th>
-                  <th data-sort="p1">РўРµР»РµС„РѕРЅ 1</th>
-                  <th data-sort="p2">РўРµР»РµС„РѕРЅ 2</th>
-                  <th data-sort="source">РСЃС‚РѕС‡РЅРёРє</th>
-                  <th data-sort="status">РЎС‚Р°С‚СѓСЃ</th>
+                  <th data-sort="site">Сайт</th>
+                  <th data-sort="name">Компания</th>
+                  <th data-sort="region">Регион</th>
+                  <th data-sort="offer">Услуга</th>
+                  <th data-sort="p1">Телефон 1</th>
+                  <th data-sort="p2">Телефон 2</th>
+                  <th data-sort="source">Источник</th>
+                  <th data-sort="status">Статус</th>
                 </tr>
               </thead>
               <tbody id="results-body"></tbody>
@@ -808,23 +808,23 @@
 
       <section class="page" id="page-history">
         <header class="page-head">
-          <h2>РСЃС‚РѕСЂРёСЏ Р·Р°РїСѓСЃРєРѕРІ</h2>
-          <p>Р’СЃРµ СЃРµСЃСЃРёРё СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РЅР° СЃРµСЂРІРµСЂРµ. РњРѕР¶РЅРѕ РѕС‚РєСЂС‹С‚СЊ РёР»Рё СЃСЂР°РІРЅРёС‚СЊ.</p>
+          <h2>История запусков</h2>
+          <p>Все сессии сохраняются на сервере. Можно открыть или сравнить.</p>
         </header>
         <div class="card">
           <div id="history-list"></div>
           <div class="grid-2" style="margin-top:20px">
             <div class="field">
-              <label for="compare-a">РЎРµСЃСЃРёСЏ A (id)</label>
-              <input type="text" id="compare-a" placeholder="id РїСЂРѕРіРѕРЅР°">
+              <label for="compare-a">Сессия A (id)</label>
+              <input type="text" id="compare-a" placeholder="id прогона">
             </div>
             <div class="field">
-              <label for="compare-b">РЎРµСЃСЃРёСЏ B (id)</label>
-              <input type="text" id="compare-b" placeholder="id РїСЂРѕРіРѕРЅР°">
+              <label for="compare-b">Сессия B (id)</label>
+              <input type="text" id="compare-b" placeholder="id прогона">
             </div>
           </div>
           <div class="actions">
-            <button type="button" class="btn btn-ghost" id="btn-compare">РЎСЂР°РІРЅРёС‚СЊ РґРІРµ СЃРµСЃСЃРёРё</button>
+            <button type="button" class="btn btn-ghost" id="btn-compare">Сравнить две сессии</button>
           </div>
           <div id="compare-result" class="hint" style="margin-top:12px"></div>
         </div>

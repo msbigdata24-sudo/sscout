@@ -229,7 +229,7 @@ def index_page():
     index = ROOT / "index.html"
     if not index.exists():
         raise HTTPException(404, "index.html не найден")
-    return FileResponse(index)
+    return FileResponse(index, media_type="text/html; charset=utf-8")
 
 
 @app.get("/static/{path:path}")
