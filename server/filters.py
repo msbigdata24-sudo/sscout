@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+import httpx
+
 from server.config import AGGREGATOR_DOMAINS, CATALOG_DOMAINS, HTTP_TIMEOUT, USER_AGENT
 from server.phones import extract_phones, extract_phones_from_text
 
