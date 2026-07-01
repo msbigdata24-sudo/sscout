@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import xml.etree.ElementTree as ET
-from urllib.parse import quote
 
 import httpx
 
@@ -45,8 +44,13 @@ def region_to_lr(regions_text: str) -> int | None:
     return None
 
 
-def _encode_query(q: str) -> str:
-    return quote(q.replace("&", "%26"), safe="")
+def query_to_lr(query: str, regions_text: str = "") -> int | None:
+    """Регион выдачи: сначала из текста запроса, иначе из брифа."""
+    low = (query or "").lower()
+    for token, lr in _REGION_LR.items():
+        if token in low:
+            return lr
+    return region_to_lr(regions_text)
 
 
 def _parse_xmlriver_response(xml_text: str, *, engine: str, query: str, page: int) -> list[dict]:
@@ -99,7 +103,7 @@ async def _xmlriver_request(
     params: dict = {
         "user": user,
         "key": key,
-        "query": _encode_query(query),
+        "query": query,
         "page": api_page,
         "groupby": 10,
     }
@@ -173,7 +177,7 @@ async def search_competitors(
     xmlriver_key: str = "",
     pages: int = SERP_PAGES,
 ) -> list[dict]:
-    lr = region_to_lr(regions_text)
+    lr = query_to_lr(query, regions_text)
     try:
         results = await search_via_xmlriver(
             query, user=xmlriver_user, key=xmlriver_key, pages=pages, lr=lr,

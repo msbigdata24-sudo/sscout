@@ -130,12 +130,13 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
 
         _set_step(
             pipeline, "serp", "done",
-            f"XMLRiver · Яндекс+Google · {SERP_PAGES} стр. · "
+            f"XMLRiver · Яндекс · {SERP_PAGES} стр. · "
             f"доменов {serp_stats.get('unique_domains', 0)}",
         )
         _log(
             pipeline,
-            f"Поиск XMLRiver · доменов {serp_stats.get('unique_domains', 0)}",
+            f"Поиск XMLRiver · сырьё {serp_stats.get('raw_hits', 0)} · "
+            f"уник. доменов {serp_stats.get('unique_domains', 0)}",
             status="success",
         )
         await _persist(run_id, pipeline)
@@ -176,6 +177,12 @@ async def run_pipeline(run_id: str, brief: dict[str, Any]) -> None:
             _log(pipeline, f"Достигнут лимит в {max_sites} сайтов — лишние отсечены")
             alive_candidates = alive_candidates[:max_sites]
 
+        if len(alive_candidates) == 0 and grouped:
+            _log(
+                pipeline,
+                "После фильтров не осталось сайтов — проверьте запросы и XMLRiver",
+                status="error",
+            )
         _set_step(
             pipeline, "filter", "done",
             f"К обходу: {len(alive_candidates)} · "

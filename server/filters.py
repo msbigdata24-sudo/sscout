@@ -45,22 +45,38 @@ def is_aggregator(domain: str) -> bool:
 _TOKEN_RE = re.compile(r"[а-яёa-z]{4,}", re.IGNORECASE)
 
 
+def _niche_stems(queries: list[str], niche: str) -> list[str]:
+    """Корни ключевых слов ниши — по ним отсекаем мусор вроде opennet.ru."""
+    stems: set[str] = set()
+    for text in queries + ([niche] if niche else []):
+        low = (text or "").lower()
+        if "опалуб" in low:
+            stems.add("опалуб")
+        for token in _TOKEN_RE.findall(low):
+            if len(token) >= 5 and token not in {
+                "аренда", "продажа", "москва", "область", "нижний", "новгород",
+                "ярославль", "владимир", "щелково", "склад", "крупнощитовая",
+                "мелкощитовая", "перекрытия", "колонны",
+            }:
+                stems.add(token[:6] if len(token) > 6 else token)
+    if not stems:
+        for text in queries + ([niche] if niche else []):
+            for token in _TOKEN_RE.findall(text or ""):
+                if len(token) >= 5:
+                    stems.add(token[:5])
+    return sorted(stems)
+
+
 def serp_hit_relevant(meta: dict, queries: list[str], niche: str) -> bool:
-    """Сниппет должен быть по теме запроса (опалубка и т.д.), иначе это мусор из выдачи."""
-    blob = " ".join([
-        str(meta.get("title") or ""),
-        str(meta.get("snippet") or ""),
-        str(meta.get("domain") or ""),
-    ]).lower()
-    tokens: set[str] = set()
-    for q in queries:
-        tokens.update(t.lower() for t in _TOKEN_RE.findall(q))
-    if niche:
-        tokens.update(t.lower() for t in _TOKEN_RE.findall(niche))
-    for token in tokens:
-        if len(token) >= 4 and token in blob:
-            return True
-        if len(token) >= 5 and token[:5] in blob:
+    """Сниппет/домен должны содержать корень ниши (опалуб…), иначе это мусор из выдачи."""
+    title = str(meta.get("title") or "")
+    snippet = str(meta.get("snippet") or "")
+    domain = str(meta.get("domain") or "").lower()
+    text_blob = f"{title} {snippet}".lower()
+
+    stems = _niche_stems(queries, niche)
+    for stem in stems:
+        if stem in text_blob or stem in domain:
             return True
     return False
 
