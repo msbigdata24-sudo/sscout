@@ -511,6 +511,8 @@
       setProgressUI(0, message, "error");
       renderLiveLogs([{ ts: "--:--:--", msg: message, status: "error" }], false);
     }
+  }
+
   function enableResultsUI() {
     $("#table-search").disabled = false;
     $("#status-filter").disabled = false;
