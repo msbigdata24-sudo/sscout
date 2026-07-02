@@ -72,12 +72,16 @@ class Database:
         results: list[dict[str, Any]] | None = None,
         error: str | None = None,
         is_demo: bool | None = None,
+        brief: dict[str, Any] | None = None,
     ) -> None:
         fields: list[str] = ["updated_at = ?"]
         values: list[Any] = [_utc_now()]
         if status is not None:
             fields.append("status = ?")
             values.append(status)
+        if brief is not None:
+            fields.append("brief_json = ?")
+            values.append(json.dumps(brief, ensure_ascii=False))
         if pipeline is not None:
             fields.append("pipeline_json = ?")
             values.append(json.dumps(pipeline, ensure_ascii=False))

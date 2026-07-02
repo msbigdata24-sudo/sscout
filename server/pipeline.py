@@ -8,6 +8,7 @@ from typing import Any
 from server.config import (
     CRAWL_CONCURRENCY,
     DEFAULT_MAX_SITES,
+    DEFAULT_PILOT_QUERIES,
     PILOT_SEED_DOMAINS,
     SERP_PAGES,
     SITE_CRAWL_TIMEOUT,
@@ -45,6 +46,20 @@ def _empty_pipeline() -> dict[str, Any]:
 def _error_message(exc: BaseException) -> str:
     msg = str(exc).strip()
     return msg or exc.__class__.__name__
+
+
+def _parse_queries(brief: dict[str, Any]) -> list[str]:
+    raw = brief.get("queries") or ""
+    if isinstance(raw, list):
+        items = [str(q).strip() for q in raw if str(q).strip()]
+    else:
+        text = str(raw).replace(",", "\n")
+        items = [q.strip() for q in text.splitlines() if q.strip()]
+    if items:
+        return items
+    if brief.get("quickCrawl"):
+        return []
+    return list(DEFAULT_PILOT_QUERIES)
 
 
 def _seed_domains_from_brief(brief: dict[str, Any]) -> list[str]:
@@ -228,7 +243,13 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
         phone_filter = brief.get("phoneFilter", "business")
         check_alive = brief.get("checkAlive", True)
         sources = set(brief.get("sources") or ["serp", "site", "catalog"])
-        queries = [q.strip() for q in (brief.get("queries") or "").splitlines() if q.strip()]
+        queries = _parse_queries(brief)
+        had_queries_in_brief = bool(
+            (isinstance(brief.get("queries"), list) and any(str(q).strip() for q in brief.get("queries")))
+            or str(brief.get("queries") or "").strip()
+        )
+        if not brief.get("quickCrawl") and not had_queries_in_brief and queries:
+            _log(pipeline, f"Запросы в брифе пустые — подставлены пилотные ({len(queries)} шт.)", status="info")
         max_sites = max(10, min(200, int(brief.get("maxSites") or DEFAULT_MAX_SITES)))
         crawl_depth = max(1, min(5, int(brief.get("crawlDepth") or 2)))
         delay_ms = max(0, min(5000, int(brief.get("requestDelayMs") or 500)))
@@ -282,6 +303,10 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
             if _is_stopped(run_id):
                 await _save_stopped(run_id, pipeline, rows)
                 return
+            if "serp" in sources and not queries:
+                raise SerpError(
+                    "Нет поисковых запросов. Откройте «Бриф» → заполните поле запросов → «Сохранить бриф»."
+                )
             _set_step(pipeline, "serp", "running")
             _log(pipeline, f"Поиск Яндекс · {SERP_PAGES} стр. · запросов {len(queries)}")
             await _persist(run_id, pipeline)

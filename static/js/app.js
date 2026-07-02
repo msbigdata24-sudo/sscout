@@ -206,10 +206,21 @@
     return parts.length ? parts.join("<span class='contacts-sep'>, </span>") : "—";
   }
 
+  function normalizeQueriesField(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).join("\n");
+    return String(value || "").trim();
+  }
+
+  function ensureBriefQueries(data) {
+    const queries = normalizeQueriesField(data?.queries);
+    if (queries) return { ...data, queries };
+    return { ...data, queries: PILOT.queries };
+  }
+
   function readForm() {
     const sources = [...$("#sources").selectedOptions].map((o) => o.value);
     const clientSite = normalizeClientSite($("#client-site").value);
-    return {
+    return ensureBriefQueries({
       clientName: $("#client-name").value.trim(),
       clientSite,
       niche: $("#niche").value.trim(),
@@ -226,7 +237,7 @@
       useProxy: $("#use-proxy").checked,
       xmlRiverUser: $("#xml-river-user").value.trim(),
       apiKey: $("#api-key").value.trim(),
-    };
+    });
   }
 
   function fillForm(data) {
@@ -237,7 +248,7 @@
       r.checked = r.value === (data.regionMode || "include");
     });
     fillRegionPresets(data.regions || "");
-    $("#queries").value = data.queries || "";
+    $("#queries").value = normalizeQueriesField(data.queries) || PILOT.queries;
     $("#exclude-domains").value = data.excludeDomains || "";
     $("#phone-filter").value = data.phoneFilter || "business";
     $("#max-sites").value = data.maxSites ?? 50;
@@ -856,7 +867,11 @@
     renderLiveLogs(null, true);
     try {
       await showRunState(runId, "running");
-      const res = await fetch(`${API_BASE}/api/run/${runId}/resume`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/run/${runId}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(brief),
+      });
       const { ok, data: payload } = await parseApiResponse(res);
       if (!ok) {
         const err = payload.detail;
@@ -976,9 +991,11 @@
   }
 
   function init() {
-    brief = window.SSStorage.loadBrief(PILOT);
+    brief = ensureBriefQueries(window.SSStorage.loadBrief(PILOT));
     results = window.SSStorage.loadResults();
     fillForm(brief);
+    brief = readForm();
+    window.SSStorage.saveBrief(brief);
     renderPipeline({});
     setProgressUI(0, "Нажмите «Запустить сбор»");
     renderLiveLogs(null, false);

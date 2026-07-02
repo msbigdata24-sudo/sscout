@@ -4,7 +4,7 @@ import asyncio
 import re
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
@@ -155,6 +155,7 @@ async def api_start_run(brief: BriefModel):
                 continue
             run = db.get_run(it["id"])
             if run and _can_resume_run(run):
+                db.update_run(run["id"], brief=brief.model_dump())
                 await resume_pipeline_background(run["id"])
                 return {"run_id": run["id"], "status": "running", "resumed": True}
     except Exception:
@@ -254,10 +255,12 @@ def api_stop_run(run_id: str):
 
 
 @app.post("/api/run/{run_id}/resume")
-async def api_resume_run(run_id: str):
+async def api_resume_run(run_id: str, brief: BriefModel | None = Body(default=None)):
     if not db.get_run(run_id):
         raise HTTPException(404, "Прогон не найден")
     try:
+        if brief is not None:
+            db.update_run(run_id, brief=brief.model_dump())
         await resume_pipeline_background(run_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
