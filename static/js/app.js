@@ -100,6 +100,51 @@
     if ($("#regions")) $("#regions").value = extra.join(", ");
   }
 
+  const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
+
+  function clearStaleRun(message) {
+    saveResumeRunId("");
+    sessionStorage.removeItem(window.SSStorage.RESUME_KEY);
+    clearInterval(pollTimer);
+    pollTimer = null;
+    currentRunId = null;
+    isLiveRun = false;
+    stopRunTimer();
+    setRunButtons(false);
+    setProgressUI(0, message || "Запустите сбор заново", "stopped");
+    renderLiveLogs([{
+      ts: "--:--:--",
+      msg: message || "Старый прогон не найден на сервере (после обновления Render база пустая). Нажмите «Быстрая проверка».",
+      status: "error",
+    }], false);
+    refreshStartButtonLabel();
+  }
+
+  async function purgeStaleRuns() {
+    const ids = [
+      window.SSStorage.loadResumeRunId(),
+      sessionStorage.getItem(window.SSStorage.RESUME_KEY),
+      currentRunId,
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+    for (const id of ids) {
+      try {
+        const res = await fetch(`${API_BASE}/api/run/${id}`);
+        if (res.status === 404) clearStaleRun();
+      } catch (_) {}
+    }
+  }
+
+  function rememberDeployVersion(version) {
+    if (!version) return;
+    const prev = localStorage.getItem(DEPLOY_VERSION_KEY);
+    if (prev && prev !== version) {
+      saveResumeRunId("");
+      sessionStorage.removeItem(window.SSStorage.RESUME_KEY);
+      currentRunId = null;
+    }
+    localStorage.setItem(DEPLOY_VERSION_KEY, version);
+  }
+
   function saveResumeRunId(id) {
     window.SSStorage.saveResumeRunId(id || "");
     if (id) sessionStorage.setItem(window.SSStorage.RESUME_KEY, id);
@@ -535,7 +580,8 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-02-final";
+      const EXPECTED_VERSION = "2026-07-02-final-b2";
+      rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
       const bad = parts.some((p) => p.includes("✗") || p.includes("нужен"));
@@ -597,6 +643,13 @@
 
   async function pollRun(runId) {
     const res = await fetch(`${API_BASE}/api/run/${runId}`);
+    if (res.status === 404) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      clearStaleRun("Прогон не найден — после обновления сервера запустите сбор заново");
+      toast("Нажмите «Быстрая проверка (12 сайтов)»");
+      return;
+    }
     if (!res.ok) throw new Error("Статус недоступен");
     const data = await res.json();
     const stepLabel = data.current_step ? stepTitle(data.current_step) : "";
@@ -1007,7 +1060,10 @@
     setProgressUI(0, "Нажмите «Запустить сбор»");
     renderLiveLogs(null, false);
     updateRunUI();
-    checkApi().then(() => refreshStartButtonLabel());
+    checkApi().then(() => {
+      purgeStaleRuns();
+      refreshStartButtonLabel();
+    });
     if (results.length) {
       enableResultsUI();
       $("#results-subtitle").textContent = `${brief.clientName} · ${results.length} строк`;
