@@ -12,7 +12,12 @@ from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY,
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site
 from server.db import db
-from server.pipeline import resume_pipeline_background, start_pipeline_background, stop_pipeline
+from server.pipeline import (
+    _can_resume_run,
+    resume_pipeline_background,
+    start_pipeline_background,
+    stop_pipeline,
+)
 
 app = FastAPI(title="Сигнал-Скаут API", version="1.1")
 
@@ -144,10 +149,7 @@ def api_get_run(run_id: str):
         "logs": pipeline.get("logs") or [],
         "site_status": pipeline.get("site_status") or {},
         "results_count": len(run.get("results") or []),
-        "can_resume": status in ("stopped", "error") and bool(
-            (pipeline.get("checkpoint") or {}).get("alive_candidates")
-            or run.get("results")
-        ),
+        "can_resume": _can_resume_run(run),
         "error": run.get("error"),
         "is_demo": run.get("is_demo", False),
         "updated_at": run.get("updated_at"),
@@ -159,7 +161,8 @@ def api_stop_run(run_id: str):
     if not db.get_run(run_id):
         raise HTTPException(404, "Прогон не найден")
     stop_pipeline(run_id)
-    return {"ok": True}
+    db.update_run(run_id, status="stopped")
+    return {"ok": True, "run_id": run_id}
 
 
 @app.post("/api/run/{run_id}/resume")

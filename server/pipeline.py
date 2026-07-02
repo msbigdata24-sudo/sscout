@@ -483,11 +483,26 @@ async def resume_pipeline_background(run_id: str) -> str:
         raise ValueError("Прогон не найден")
     if run.get("status") not in ("stopped", "error"):
         raise ValueError("Продолжить можно только остановленный или упавший прогон")
-    checkpoint = (run.get("pipeline") or {}).get("checkpoint") or {}
-    if not checkpoint.get("alive_candidates") and not run.get("results"):
+    if not _can_resume_run(run):
         raise ValueError("Нет сохранённого прогресса для продолжения")
+    db.update_run(run_id, status="running")
     asyncio.create_task(run_pipeline(run_id, run["brief"], resume=True))
     return run_id
+
+
+def _can_resume_run(run: dict) -> bool:
+    status = run.get("status") or ""
+    if status not in ("stopped", "error"):
+        return False
+    pipeline = run.get("pipeline") or {}
+    checkpoint = pipeline.get("checkpoint") or {}
+    if checkpoint.get("alive_candidates") or run.get("results"):
+        return True
+    if pipeline.get("filter") == "done":
+        return True
+    if pipeline.get("serp") == "done" and checkpoint.get("serp_hits"):
+        return True
+    return False
 
 
 def _detect_region(offer: str, regions: list[str]) -> str:

@@ -25,4 +25,19 @@ window.SSStorage = {
   saveResults(data) {
     localStorage.setItem(this.RESULTS_KEY, JSON.stringify(data));
   },
+
+  RESUME_KEY: "signal-scout-resume-run-v1",
+
+  saveResumeRunId(id) {
+    if (id) localStorage.setItem(this.RESUME_KEY, id);
+    else localStorage.removeItem(this.RESUME_KEY);
+  },
+
+  loadResumeRunId() {
+    try {
+      return localStorage.getItem(this.RESUME_KEY) || "";
+    } catch (_) {
+      return "";
+    }
+  },
 };

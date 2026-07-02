@@ -52,7 +52,54 @@
   let sortCol = "";
   let sortDir = 1;
   const PAGE_SIZE = 50;
-  const RESUME_KEY = "signal-scout-resume-run";
+
+  function saveResumeRunId(id) {
+    window.SSStorage.saveResumeRunId(id || "");
+    if (id) sessionStorage.setItem(window.SSStorage.RESUME_KEY, id);
+    else sessionStorage.removeItem(window.SSStorage.RESUME_KEY);
+  }
+
+  async function findResumableRunId() {
+    const site = ($("#client-site")?.value || brief?.clientSite || "").trim();
+    const ids = [
+      window.SSStorage.loadResumeRunId(),
+      sessionStorage.getItem(window.SSStorage.RESUME_KEY),
+      currentRunId,
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    for (const id of ids) {
+      try {
+        const st = await fetch(`${API_BASE}/api/run/${id}`);
+        if (!st.ok) continue;
+        const info = await st.json();
+        if (info.can_resume && (info.status === "stopped" || info.status === "error")) {
+          return id;
+        }
+      } catch (_) {}
+    }
+
+    if (!apiOnline) return null;
+    try {
+      const res = await fetch(`${API_BASE}/api/history?limit=15`);
+      const data = await res.json();
+      for (const it of data.items || []) {
+        if (site && it.client_site && it.client_site !== site) continue;
+        if (it.status !== "stopped" && it.status !== "error") continue;
+        const st = await fetch(`${API_BASE}/api/run/${it.id}`);
+        if (!st.ok) continue;
+        const info = await st.json();
+        if (info.can_resume) return it.id;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async function refreshStartButtonLabel() {
+    const btn = $("#btn-start");
+    if (!btn || runActive) return;
+    const resumeId = await findResumableRunId();
+    btn.textContent = resumeId ? "Продолжить сбор" : "Запустить сбор";
+  }
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -473,7 +520,7 @@
     if (data.status === "done") {
       clearInterval(pollTimer);
       stopRunTimer();
-      sessionStorage.removeItem(RESUME_KEY);
+      saveResumeRunId("");
       setProgressUI(100, "", "done");
       const rr = await fetch(`${API_BASE}/api/results/${runId}`);
       const payload = await rr.json();
@@ -503,7 +550,7 @@
       stopRunTimer();
       applyPipeline(data.pipeline || {}, data.progress || 0, { status: "stopped" });
       if (data.can_resume && runId) {
-        sessionStorage.setItem(RESUME_KEY, runId);
+        saveResumeRunId(runId);
         currentRunId = runId;
         try {
           const rr = await fetch(`${API_BASE}/api/results/${runId}`);
@@ -518,6 +565,7 @@
         toast("Сбор остановлен");
       }
       setRunButtons(false);
+      refreshStartButtonLabel();
       return;
     }
     if (data.status === "running" || data.status === "pending") {
@@ -589,20 +637,12 @@
     brief = readForm();
     window.SSStorage.saveBrief(brief);
 
-    const resumeId = sessionStorage.getItem(RESUME_KEY) || currentRunId;
+    const resumeId = await findResumableRunId();
     if (resumeId) {
-      try {
-        const st = await fetch(`${API_BASE}/api/run/${resumeId}`);
-        if (st.ok) {
-          const info = await st.json();
-          if (info.can_resume && (info.status === "stopped" || info.status === "error")) {
-            return resumePipeline(resumeId);
-          }
-        }
-      } catch (_) {}
-      sessionStorage.removeItem(RESUME_KEY);
+      return resumePipeline(resumeId);
     }
 
+    saveResumeRunId("");
     setRunButtons(true);
     startRunTimer();
     setProgressUI(1, "Проверка сервера…", "running");
@@ -647,7 +687,7 @@
         throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка запуска");
       }
       currentRunId = payload.run_id;
-      sessionStorage.removeItem(RESUME_KEY);
+      saveResumeRunId("");
       await startPolling(currentRunId);
     } catch (e) {
       clearInterval(waitUi);
@@ -671,6 +711,7 @@
         throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка продолжения");
       }
       toast("Продолжаем с места остановки…");
+      saveResumeRunId("");
       await startPolling(runId);
     } catch (e) {
       resetRunUi(e.message || "Не удалось продолжить сбор");
@@ -756,6 +797,7 @@
     $("#run-subtitle").textContent = hasBrief
       ? `Клиент: ${brief.clientName} · ${brief.clientSite}`
       : "Сначала сохраните бриф.";
+    refreshStartButtonLabel();
   }
 
   function init() {
@@ -766,6 +808,7 @@
     setProgressUI(0, "Нажмите «Запустить сбор»");
     renderLiveLogs(null, false);
     updateRunUI();
+    checkApi().then(() => refreshStartButtonLabel());
     if (results.length) {
       enableResultsUI();
       $("#results-subtitle").textContent = `${brief.clientName} · ${results.length} строк`;
@@ -793,13 +836,21 @@
     $("#client-site").addEventListener("blur", previewNiche);
     $("#btn-start").addEventListener("click", runPipeline);
     $("#btn-stop").addEventListener("click", async () => {
-      if (currentRunId) {
-        try {
-          await fetch(`${API_BASE}/api/run/${currentRunId}/stop`, { method: "POST" });
-        } catch (_) {}
+      const runId = currentRunId;
+      if (!runId) return;
+      saveResumeRunId(runId);
+      clearInterval(pollTimer);
+      pollTimer = null;
+      stopRunTimer();
+      setRunButtons(false);
+      try {
+        await fetch(`${API_BASE}/api/run/${runId}/stop`, { method: "POST" });
+        await pollRun(runId);
+      } catch (_) {
+        setProgressUI(0, "Остановлено", "stopped");
       }
-      resetRunUi("Остановлено");
-      toast("Остановлено");
+      refreshStartButtonLabel();
+      toast("Остановлено · нажмите «Продолжить сбор»");
     });
 
     $("#table-search").addEventListener("input", () => { tablePage = 1; renderTable(results); });
