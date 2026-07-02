@@ -45,6 +45,15 @@ def _step_done(pipeline: dict, step: str) -> bool:
     return pipeline.get(step) == "done"
 
 
+def _prepare_resume_pipeline(pipeline: dict) -> dict:
+    """Шаг running при остановке сбрасываем в pending — resume повторит его."""
+    prepared = dict(pipeline)
+    for step in PIPELINE_STEPS:
+        if prepared.get(step) == "running":
+            prepared[step] = "pending"
+    return prepared
+
+
 def _log(pipeline: dict, msg: str, site: str | None = None, status: str = "info") -> None:
     pipeline.setdefault("logs", []).append({
         "ts": _ts(),
@@ -72,7 +81,8 @@ def _is_stopped(run_id: str) -> bool:
 
 async def _save_stopped(run_id: str, pipeline: dict, rows: list[dict]) -> None:
     _log(pipeline, "Остановлено пользователем", status="error")
-    await _persist(run_id, pipeline, status="stopped", results=rows)
+    prepared = _prepare_resume_pipeline(pipeline)
+    await _persist(run_id, prepared, status="stopped", results=rows)
 
 
 def _crawled_domains(rows: list[dict]) -> set[str]:
@@ -184,7 +194,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
     resuming = bool(resume and existing and existing.get("pipeline"))
 
     if resuming:
-        pipeline = dict(existing["pipeline"])
+        pipeline = _prepare_resume_pipeline(dict(existing["pipeline"]))
         pipeline.setdefault("logs", [])
         pipeline.setdefault("site_status", {})
         pipeline.setdefault("checkpoint", {})
@@ -502,7 +512,12 @@ def _can_resume_run(run: dict) -> bool:
         return True
     if pipeline.get("serp") == "done" and checkpoint.get("serp_hits"):
         return True
-    return False
+    # Остановили на шаге 2–3 (например 24%): analyze уже done, serp ещё running.
+    if pipeline.get("analyze") == "done":
+        return True
+    if any(pipeline.get(step) == "done" for step in PIPELINE_STEPS):
+        return True
+    return len(pipeline.get("logs") or []) >= 2
 
 
 def _detect_region(offer: str, regions: list[str]) -> str:

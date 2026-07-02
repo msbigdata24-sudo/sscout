@@ -59,6 +59,15 @@
     else sessionStorage.removeItem(window.SSStorage.RESUME_KEY);
   }
 
+  function isResumableRunInfo(info) {
+    if (!info) return false;
+    if (info.status !== "stopped" && info.status !== "error") return false;
+    if (info.can_resume) return true;
+    const p = info.pipeline || {};
+    if (p.analyze === "done") return true;
+    return PIPELINE_STEPS.some((s) => p[s.id] === "done");
+  }
+
   async function findResumableRunId() {
     const site = ($("#client-site")?.value || brief?.clientSite || "").trim();
     const ids = [
@@ -72,9 +81,7 @@
         const st = await fetch(`${API_BASE}/api/run/${id}`);
         if (!st.ok) continue;
         const info = await st.json();
-        if (info.can_resume && (info.status === "stopped" || info.status === "error")) {
-          return id;
-        }
+        if (isResumableRunInfo(info)) return id;
       } catch (_) {}
     }
 
@@ -88,7 +95,7 @@
         const st = await fetch(`${API_BASE}/api/run/${it.id}`);
         if (!st.ok) continue;
         const info = await st.json();
-        if (info.can_resume) return it.id;
+        if (isResumableRunInfo(info)) return it.id;
       }
     } catch (_) {}
     return null;
@@ -549,7 +556,7 @@
       clearInterval(pollTimer);
       stopRunTimer();
       applyPipeline(data.pipeline || {}, data.progress || 0, { status: "stopped" });
-      if (data.can_resume && runId) {
+      if (isResumableRunInfo(data) && runId) {
         saveResumeRunId(runId);
         currentRunId = runId;
         try {
@@ -560,7 +567,7 @@
             window.SSStorage.saveResults(results);
           }
         } catch (_) {}
-        toast(`Остановлено · обойдено ${data.results_count || 0} сайтов · «Запустить сбор» продолжит`);
+        toast(`Остановлено · обойдено ${data.results_count || 0} сайтов · «Продолжить сбор» продолжит`);
       } else {
         toast("Сбор остановлен");
       }
@@ -633,6 +640,18 @@
     await pollRun(runId);
   }
 
+  async function showRunState(runId, statusHint) {
+    const res = await fetch(`${API_BASE}/api/run/${runId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    applyPipeline(data.pipeline || {}, data.progress || 0, {
+      status: statusHint || data.status,
+      current_step_label: stepLabel ? `Сейчас: ${stepLabel}…` : "",
+    });
+    return data;
+  }
+
   async function runPipeline() {
     brief = readForm();
     window.SSStorage.saveBrief(brief);
@@ -687,7 +706,12 @@
         throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка запуска");
       }
       currentRunId = payload.run_id;
-      saveResumeRunId("");
+      if (payload.resumed) {
+        toast("Продолжаем с места остановки…");
+        await showRunState(currentRunId, "running");
+      } else {
+        saveResumeRunId("");
+      }
       await startPolling(currentRunId);
     } catch (e) {
       clearInterval(waitUi);
@@ -704,6 +728,7 @@
     setProgressUI(5, "Продолжение сбора…", "running");
     renderLiveLogs(null, true);
     try {
+      await showRunState(runId, "running");
       const res = await fetch(`${API_BASE}/api/run/${runId}/resume`, { method: "POST" });
       const { ok, data: payload } = await parseApiResponse(res);
       if (!ok) {
@@ -712,6 +737,7 @@
       }
       toast("Продолжаем с места остановки…");
       saveResumeRunId("");
+      currentRunId = runId;
       await startPolling(runId);
     } catch (e) {
       resetRunUi(e.message || "Не удалось продолжить сбор");
@@ -849,6 +875,7 @@
       } catch (_) {
         setProgressUI(0, "Остановлено", "stopped");
       }
+      currentRunId = runId;
       refreshStartButtonLabel();
       toast("Остановлено · нажмите «Продолжить сбор»");
     });

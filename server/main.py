@@ -14,6 +14,7 @@ from server.crawler import analyze_client_site
 from server.db import db
 from server.pipeline import (
     _can_resume_run,
+    _prepare_resume_pipeline,
     resume_pipeline_background,
     start_pipeline_background,
     stop_pipeline,
@@ -175,11 +176,18 @@ def api_get_run(run_id: str):
 
 @app.post("/api/run/{run_id}/stop")
 def api_stop_run(run_id: str):
-    if not db.get_run(run_id):
+    run = db.get_run(run_id)
+    if not run:
         raise HTTPException(404, "Прогон не найден")
     stop_pipeline(run_id)
-    db.update_run(run_id, status="stopped")
-    return {"ok": True, "run_id": run_id}
+    pipeline = _prepare_resume_pipeline(run.get("pipeline") or {})
+    db.update_run(
+        run_id,
+        status="stopped",
+        pipeline=pipeline,
+        results=run.get("results") or [],
+    )
+    return {"ok": True, "run_id": run_id, "can_resume": _can_resume_run({**run, "status": "stopped", "pipeline": pipeline})}
 
 
 @app.post("/api/run/{run_id}/resume")
