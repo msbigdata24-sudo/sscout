@@ -667,12 +667,14 @@
   function setRunButtons(running) {
     const hasBrief = Boolean(brief?.clientSite) && isValidClientSite(brief?.clientSite);
     const startBtn = $("#btn-start");
+    const quickBtn = $("#btn-quick");
     if (startBtn) {
       startBtn.disabled = running || !hasBrief || startingRun;
       startBtn.setAttribute("aria-busy", running ? "true" : "false");
       startBtn.classList.toggle("is-loading", running);
       if (running) startBtn.textContent = "Сбор идёт…";
     }
+    if (quickBtn) quickBtn.disabled = running || !hasBrief || startingRun;
     const stopBtn = $("#btn-stop");
     if (stopBtn) stopBtn.disabled = !running;
     if (!running && startBtn) refreshStartButtonLabel();
@@ -722,6 +724,45 @@
       current_step_label: stepLabel ? `Сейчас: ${stepLabel}…` : "",
     });
     return data;
+  }
+
+  async function runQuickPipeline() {
+    if (startingRun || runActive) return;
+    brief = readForm();
+    if (!isValidClientSite(brief.clientSite)) {
+      toast("Сначала укажите корректный URL сайта в брифе");
+      return;
+    }
+    window.SSStorage.saveBrief(brief);
+    startingRun = true;
+    saveResumeRunId("");
+    setRunButtons(true);
+    startRunTimer();
+    setProgressUI(5, "Быстрый обход 12 конкурентов…", "running");
+    renderLiveLogs(null, true);
+    try {
+      const health = await checkApi();
+      if (!apiOnline) throw new Error("Сервер офлайн");
+      const res = await fetch(`${API_BASE}/api/run/quick`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(brief),
+      });
+      const { ok, data: payload } = await parseApiResponse(res);
+      if (!ok) {
+        const err = payload.detail;
+        throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка запуска");
+      }
+      currentRunId = payload.run_id;
+      toast("Быстрый обход запущен — ~3–5 минут");
+      await startPolling(currentRunId);
+    } catch (e) {
+      resetRunUi(e.message || "Не удалось запустить быстрый обход");
+      toast(e.message || "Ошибка");
+    } finally {
+      startingRun = false;
+      if (!runActive) setRunButtons(false);
+    }
   }
 
   async function runPipeline() {
@@ -979,6 +1020,7 @@
 
     $("#client-site").addEventListener("blur", previewNiche);
     $("#btn-start").addEventListener("click", runPipeline);
+    $("#btn-quick")?.addEventListener("click", runQuickPipeline);
     $("#btn-stop").addEventListener("click", async () => {
       const runId = currentRunId;
       if (!runId) return;

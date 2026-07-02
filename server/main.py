@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
+from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER, PILOT_SEED_DOMAINS
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
@@ -49,6 +49,8 @@ class BriefModel(BaseModel):
     crawlDepth: int = Field(default=2, ge=1, le=5)
     requestDelayMs: int = Field(default=500, ge=0, le=5000)
     useProxy: bool = False
+    quickCrawl: bool = False
+    seedDomains: str = ""
 
     @field_validator("clientSite")
     @classmethod
@@ -105,6 +107,8 @@ async def xmlriver_check(
 
 
 def _search_ready(brief: BriefModel) -> bool:
+    if brief.quickCrawl:
+        return True
     user, key = parse_xmlriver_credentials(
         api_user=brief.xmlRiverUser or XMLRIVER_USER,
         api_key=brief.apiKey or XMLRIVER_KEY,
@@ -162,6 +166,27 @@ async def api_start_run(brief: BriefModel):
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"run_id": run_id, "status": "pending", "resumed": False}
+
+
+@app.post("/api/run/quick")
+async def api_quick_run(brief: BriefModel):
+    """Быстрый обход 12 известных конкурентов — без XMLRiver, чтобы проверить телефоны."""
+    if not brief.clientSite.strip():
+        raise HTTPException(400, "Укажите сайт клиента")
+    payload = brief.model_dump()
+    payload["quickCrawl"] = True
+    payload["sources"] = ["site"]
+    payload["checkAlive"] = False
+    payload["maxSites"] = min(int(payload.get("maxSites") or 50), len(PILOT_SEED_DOMAINS))
+    if find_running_run_id(payload["clientSite"]) or db.find_active_run(payload["clientSite"]):
+        active = db.find_active_run(payload["clientSite"])
+        run_id = active["id"] if active else find_running_run_id(payload["clientSite"])
+        raise HTTPException(409, f"Сбор для этого клиента уже выполняется (прогон {run_id})")
+    try:
+        run_id = await start_pipeline_background(payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"run_id": run_id, "status": "pending", "quick": True}
 
 
 PIPELINE_STEP_IDS = ("analyze", "serp", "filter", "crawl", "catalog", "dedup")

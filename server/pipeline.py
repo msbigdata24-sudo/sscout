@@ -8,6 +8,7 @@ from typing import Any
 from server.config import (
     CRAWL_CONCURRENCY,
     DEFAULT_MAX_SITES,
+    PILOT_SEED_DOMAINS,
     SERP_PAGES,
     SITE_CRAWL_TIMEOUT,
 )
@@ -39,6 +40,20 @@ def _empty_pipeline() -> dict[str, Any]:
         state[step] = "pending"
         state[step + "Log"] = ""
     return state
+
+
+def _error_message(exc: BaseException) -> str:
+    msg = str(exc).strip()
+    return msg or exc.__class__.__name__
+
+
+def _seed_domains_from_brief(brief: dict[str, Any]) -> list[str]:
+    if not brief.get("quickCrawl"):
+        return []
+    raw = (brief.get("seedDomains") or "").strip()
+    if raw:
+        return [d.strip().lower().lstrip("www.") for d in raw.replace("\n", ",").split(",") if d.strip()]
+    return list(PILOT_SEED_DOMAINS)
 
 
 def _step_done(pipeline: dict, step: str) -> bool:
@@ -222,6 +237,8 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
         checkpoint = pipeline.get("checkpoint") or {}
         alive_candidates: list[dict] = list(checkpoint.get("alive_candidates") or [])
         catalog_urls: dict[str, str] = dict(checkpoint.get("catalog_urls") or {})
+        seed_domains = _seed_domains_from_brief(brief)
+        quick_crawl = bool(seed_domains)
 
         # ── 1 analyze ──
         if not _step_done(pipeline, "analyze"):
@@ -253,7 +270,15 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
             await _persist(run_id, pipeline)
 
         # ── 2 serp ──
-        if not _step_done(pipeline, "serp"):
+        if quick_crawl and not _step_done(pipeline, "serp"):
+            _set_step(pipeline, "serp", "done", f"Пропущен · быстрый обход {len(seed_domains)} сайтов")
+            _log(
+                pipeline,
+                f"Быстрый режим: обход {len(seed_domains)} известных конкурентов (без XMLRiver)",
+                status="info",
+            )
+            await _persist(run_id, pipeline)
+        elif not _step_done(pipeline, "serp"):
             if _is_stopped(run_id):
                 await _save_stopped(run_id, pipeline, rows)
                 return
@@ -307,88 +332,118 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
             _set_step(pipeline, "filter", "running")
             await _persist(run_id, pipeline)
 
-            serp_hits = checkpoint.get("serp_hits") or []
-            if not serp_hits and "serp" in sources:
-                xr_user, xr_key = parse_xmlriver_credentials(
-                    api_user=brief.get("xmlRiverUser", ""),
-                    api_key=brief.get("apiKey", ""),
-                )
-                serp_hits, _ = await collect_serp(
-                    queries,
-                    pages=SERP_PAGES,
-                    xmlriver_user=xr_user,
-                    xmlriver_key=xr_key,
-                    regions_text=brief.get("regions", ""),
-                    max_results=max(50, max_sites * 4),
-                )
-                for hit in serp_hits:
-                    if is_catalog_domain(hit["domain"]):
-                        catalog_urls[hit["domain"]] = hit["url"]
-                checkpoint["serp_hits"] = serp_hits
-
-            grouped = group_hits_by_domain(serp_hits)
-            candidates: list[dict] = []
-            excluded_count = 0
-            irrelevant_count = 0
-            for domain, meta in grouped.items():
-                status = classify_domain(domain, exclude=exclude, client_domain=client_domain)
-                if status in ("исключён", "агрегатор"):
-                    excluded_count += 1
-                    continue
-                if not serp_hit_relevant(meta, queries, brief.get("niche", "")):
-                    irrelevant_count += 1
-                    continue
-                candidates.append({**meta, "domain": domain})
-
-            alive_candidates = []
-            for cand in candidates:
-                if _is_stopped(run_id):
-                    checkpoint["alive_candidates"] = alive_candidates
-                    checkpoint["catalog_urls"] = catalog_urls
-                    pipeline["checkpoint"] = checkpoint
-                    await _save_stopped(run_id, pipeline, rows)
-                    return
-                domain = cand["domain"]
-                url = cand["urls"][0] if cand.get("urls") else f"https://{domain}"
-                alive, final_url, _code = await check_site_alive(url, require_phone=check_alive)
-                if check_alive and not alive:
-                    _log(
-                        pipeline,
-                        f"{domain} — не подходит (не отвечает, парковка или нет телефона на главной)",
-                        domain,
-                        "error",
-                    )
-                    continue
-                cand["final_url"] = final_url
-                alive_candidates.append(cand)
-
-            if len(alive_candidates) > max_sites:
-                _log(pipeline, f"Достигнут лимит в {max_sites} сайтов — лишние отсечены")
+            if quick_crawl and not alive_candidates:
+                for domain in seed_domains:
+                    if _is_stopped(run_id):
+                        await _save_stopped(run_id, pipeline, rows)
+                        return
+                    d = domain.lower().lstrip("www.")
+                    if d in exclude or d == client_domain:
+                        continue
+                    alive_candidates.append({
+                        "domain": d,
+                        "urls": [f"https://{d}"],
+                        "title": d,
+                        "snippet": "быстрый обход",
+                        "engines": ["seed"],
+                        "queries": ["quick"],
+                    })
                 alive_candidates = alive_candidates[:max_sites]
-
-            if len(alive_candidates) == 0 and grouped:
+                checkpoint["alive_candidates"] = alive_candidates
+                pipeline["checkpoint"] = checkpoint
+                _set_step(
+                    pipeline, "filter", "done",
+                    f"К обходу: {len(alive_candidates)} (быстрый режим)",
+                )
                 _log(
                     pipeline,
-                    "После фильтров не осталось сайтов — проверьте запросы и XMLRiver",
-                    status="error",
+                    f"Быстрый обход: {len(alive_candidates)} сайтов в очереди",
+                    status="success",
                 )
+                await _persist(run_id, pipeline)
+            else:
+                serp_hits = checkpoint.get("serp_hits") or []
+                if not serp_hits and "serp" in sources:
+                    xr_user, xr_key = parse_xmlriver_credentials(
+                        api_user=brief.get("xmlRiverUser", ""),
+                        api_key=brief.get("apiKey", ""),
+                    )
+                    serp_hits, _ = await collect_serp(
+                        queries,
+                        pages=SERP_PAGES,
+                        xmlriver_user=xr_user,
+                        xmlriver_key=xr_key,
+                        regions_text=brief.get("regions", ""),
+                        max_results=max(50, max_sites * 4),
+                    )
+                    for hit in serp_hits:
+                        if is_catalog_domain(hit["domain"]):
+                            catalog_urls[hit["domain"]] = hit["url"]
+                    checkpoint["serp_hits"] = serp_hits
 
-            checkpoint["alive_candidates"] = alive_candidates
-            checkpoint["catalog_urls"] = catalog_urls
-            pipeline["checkpoint"] = checkpoint
+                grouped = group_hits_by_domain(serp_hits)
+                candidates: list[dict] = []
+                excluded_count = 0
+                irrelevant_count = 0
+                for domain, meta in grouped.items():
+                    status = classify_domain(domain, exclude=exclude, client_domain=client_domain)
+                    if status in ("исключён", "агрегатор"):
+                        excluded_count += 1
+                        continue
+                    if not serp_hit_relevant(meta, queries, brief.get("niche", "")):
+                        irrelevant_count += 1
+                        continue
+                    candidates.append({**meta, "domain": domain})
 
-            _set_step(
-                pipeline, "filter", "done",
-                f"К обходу: {len(alive_candidates)} · "
-                f"отсечено: агрег. {excluded_count}, не по теме {irrelevant_count}",
-            )
-            _log(
-                pipeline,
-                f"После фильтра: {len(alive_candidates)} сайтов к обходу "
-                f"(агрегаторов {excluded_count}, не по теме {irrelevant_count})",
-                status="success",
-            )
-            await _persist(run_id, pipeline)
+                alive_candidates = []
+                for cand in candidates:
+                    if _is_stopped(run_id):
+                        checkpoint["alive_candidates"] = alive_candidates
+                        checkpoint["catalog_urls"] = catalog_urls
+                        pipeline["checkpoint"] = checkpoint
+                        await _save_stopped(run_id, pipeline, rows)
+                        return
+                    domain = cand["domain"]
+                    url = cand["urls"][0] if cand.get("urls") else f"https://{domain}"
+                    alive, final_url, _code = await check_site_alive(url, require_phone=False)
+                    if check_alive and not alive:
+                        _log(
+                            pipeline,
+                            f"{domain} — не отвечает или парковка",
+                            domain,
+                            "error",
+                        )
+                        continue
+                    cand["final_url"] = final_url
+                    alive_candidates.append(cand)
+
+                if len(alive_candidates) > max_sites:
+                    _log(pipeline, f"Достигнут лимит в {max_sites} сайтов — лишние отсечены")
+                    alive_candidates = alive_candidates[:max_sites]
+
+                if len(alive_candidates) == 0 and grouped:
+                    _log(
+                        pipeline,
+                        "После фильтров не осталось сайтов — проверьте запросы и XMLRiver",
+                        status="error",
+                    )
+
+                checkpoint["alive_candidates"] = alive_candidates
+                checkpoint["catalog_urls"] = catalog_urls
+                pipeline["checkpoint"] = checkpoint
+
+                _set_step(
+                    pipeline, "filter", "done",
+                    f"К обходу: {len(alive_candidates)} · "
+                    f"отсечено: агрег. {excluded_count}, не по теме {irrelevant_count}",
+                )
+                _log(
+                    pipeline,
+                    f"После фильтра: {len(alive_candidates)} сайтов к обходу "
+                    f"(агрегаторов {excluded_count}, не по теме {irrelevant_count})",
+                    status="success",
+                )
+                await _persist(run_id, pipeline)
 
         if _is_stopped(run_id):
             await _save_stopped(run_id, pipeline, rows)
@@ -470,13 +525,15 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
 
         await _persist(run_id, pipeline, status="done", results=all_rows, is_demo=False)
     except SerpError as exc:
-        _log(pipeline, str(exc), status="error")
-        await _persist(run_id, pipeline, status="error", error=str(exc), results=rows)
+        err = _error_message(exc)
+        _log(pipeline, err, status="error")
+        await _persist(run_id, pipeline, status="error", error=err, results=rows)
     except Exception as exc:
-        _log(pipeline, str(exc), status="error")
+        err = _error_message(exc)
+        _log(pipeline, err, status="error")
         pl = db.get_run(run_id)
         pipeline = (pl or {}).get("pipeline") or pipeline
-        await _persist(run_id, pipeline, status="error", error=str(exc), results=rows)
+        await _persist(run_id, pipeline, status="error", error=err, results=rows)
     finally:
         _running.pop(run_id, None)
 

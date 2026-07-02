@@ -275,17 +275,26 @@ async def collect_serp(
         "queries": len(queries),
     }
     all_hits: list[dict] = []
+    errors: list[str] = []
     for query in queries:
-        batch = await search_competitors(
-            query,
-            regions_text=regions_text,
-            max_results=max_results,
-            xmlriver_user=xmlriver_user,
-            xmlriver_key=xmlriver_key,
-            pages=pages,
-        )
+        try:
+            batch = await search_competitors(
+                query,
+                regions_text=regions_text,
+                max_results=max_results,
+                xmlriver_user=xmlriver_user,
+                xmlriver_key=xmlriver_key,
+                pages=pages,
+            )
+        except SerpError as exc:
+            errors.append(f"{query}: {str(exc).strip() or exc.__class__.__name__}")
+            continue
         stats["raw_hits"] += len(batch)
         all_hits.extend(batch)
+    if errors:
+        stats["errors"] = errors
+    if not all_hits and errors:
+        raise SerpError("; ".join(errors[:3]))
     stats["unique_domains"] = len({h["domain"] for h in all_hits})
     return all_hits, stats
 

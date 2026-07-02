@@ -24,6 +24,22 @@ SERP_PAGES = 4
 DEFAULT_MAX_SITES = 50
 DB_PATH = ROOT / "data" / "signal_scout.db"
 
+# Проверенные конкуренты Опалубки — для быстрого теста обхода без XMLRiver
+PILOT_SEED_DOMAINS = (
+    "best-opalubka.ru",
+    "avant-opalubka.ru",
+    "arsipro.ru",
+    "opalubka-trade.ru",
+    "faneratorg.ru",
+    "prosto-monolit.ru",
+    "myopalubka.ru",
+    "egds.ru",
+    "opalubkaset.ru",
+    "renta76.ru",
+    "arendaopalubki52.ru",
+    "gora-nn.ru",
+)
+
 AGGREGATOR_DOMAINS = frozenset({
     "avito.ru", "www.avito.ru", "m.avito.ru",
     "2gis.ru", "www.2gis.ru",
