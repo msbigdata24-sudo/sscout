@@ -283,23 +283,24 @@
     return `<span class="tag ${map[status] || "tag-muted"}">${status}</span>`;
   }
 
-  function renderPhoneCell(phone, type, valid) {
+  function renderPhoneCell(phone) {
     if (!phone) return '<span class="phone phone-empty">—</span>';
-    const cls = type === "mobile" ? "phone-mobile" : type === "city" ? "phone-city" : "";
-    const invalid = valid === false ? " phone-invalid" : "";
     const shown = formatPhone(phone);
-    const tip = phoneTypeLabel(type) || "номер";
     return `<span class="phone-wrap">
-      <span class="phone ${cls}${invalid}" title="${tip}">${shown}</span>
+      <span class="phone">${shown}</span>
       <button type="button" class="btn-mini" data-copy="${shown}" title="Копировать">⧉</button>
     </span>`;
   }
 
+  function rowPhones(r) {
+    if (Array.isArray(r.phones) && r.phones.length) return r.phones.filter(Boolean);
+    return [r.p1, r.p2].filter(Boolean);
+  }
+
   function renderContactsCell(r) {
-    const parts = [];
-    if (r.p1) parts.push(renderPhoneCell(r.p1, r.p1_type, r.p1_valid));
-    if (r.p2) parts.push(renderPhoneCell(r.p2, r.p2_type, r.p2_valid));
-    return parts.length ? parts.join("<span class='contacts-sep'>, </span>") : "—";
+    const nums = rowPhones(r);
+    if (!nums.length) return "—";
+    return nums.map((p) => renderPhoneCell(p)).join("<span class='contacts-sep'>, </span>");
   }
 
   function normalizeQueriesField(value) {

@@ -96,7 +96,28 @@ def extract_phones(html: str, url: str = "") -> list[dict]:
     found: list[dict] = []
     soup = BeautifulSoup(html, "html.parser")
 
-    # footer первым
+    # Шапка и навигация — телефоны часто только там (как на sk-teremok.ru).
+    for tag_name in ("header", "nav"):
+        for block in soup.find_all(tag_name):
+            _add_from_text(found, block.get_text(" ", strip=True), tag_name)
+            for a in block.find_all("a", href=True):
+                href = a.get("href") or ""
+                low = href.lower()
+                if _SKIP_LINK_RE.search(href):
+                    continue
+                if low.startswith("tel:"):
+                    _add_phone(found, href[4:], "tel")
+                elif low.startswith("callto:"):
+                    _add_phone(found, href[7:], "callto")
+
+    for el in soup.select('[itemprop="telephone"], [class*="phone"], [class*="tel"]'):
+        _add_from_text(found, el.get_text(" ", strip=True), "header-class")
+        for attr in ("data-phone", "data-tel", "data-telephone", "data-href"):
+            val = el.get(attr) or ""
+            if val:
+                _add_from_text(found, str(val), "data-attr")
+
+    # footer
     for footer in soup.find_all("footer"):
         _add_from_text(found, footer.get_text(" ", strip=True), "footer")
 
@@ -203,14 +224,31 @@ def pick_phones_enriched(
     enriched: list[dict],
     phone_filter: str = "business",
 ) -> tuple[str, str, str, str]:
-    phones = [e["phone"] for e in enriched]
+    phones = pick_phones_list(enriched, phone_filter)
     types = {e["phone"]: e["type"] for e in enriched}
+    p1 = phones[0] if phones else ""
+    p2 = phones[1] if len(phones) > 1 else ""
+    return p1, p2, types.get(p1, ""), types.get(p2, "")
+
+
+def pick_phones_list(
+    enriched: list[dict],
+    phone_filter: str = "business",
+) -> list[str]:
+    phones = [e["phone"] for e in enriched]
     filtered = filter_phones_list(phones, phone_filter)
     if not filtered and phone_filter == "mobile":
         filtered = filter_phones_list(phones, "business")
-    p1 = filtered[0] if filtered else ""
-    p2 = filtered[1] if len(filtered) > 1 else ""
-    return p1, p2, types.get(p1, ""), types.get(p2, "")
+    return filtered
+
+
+def format_phone_display(digits: str) -> str:
+    d = normalize_digits(digits)
+    if not d:
+        return digits or ""
+    if d.startswith("79"):
+        return f"+7 ({d[1:4]}) {d[4:7]}-{d[7:9]}-{d[9:11]}"
+    return f"+7 ({d[1:4]}) {d[4:7]}-{d[7:9]}-{d[9:11]}"
 
 
 def pick_phones(phones: list[str], phone_filter: str) -> tuple[str, str]:

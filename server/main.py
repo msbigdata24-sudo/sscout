@@ -21,7 +21,7 @@ from server.config import (
     YANDEX_XML_KEY,
     YANDEX_XML_USER,
 )
-from server.serp import parse_xmlriver_credentials, probe_xmlriver
+from server.phones import format_phone_display
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
 from server.pipeline import (
@@ -319,22 +319,39 @@ def api_compare(a: str = Query(...), b: str = Query(...)):
     }
 
 
+def _phones_for_export(row: dict) -> list[str]:
+    raw = row.get("phones")
+    if isinstance(raw, list) and raw:
+        nums = [str(p) for p in raw if p]
+    else:
+        nums = [str(row.get(k)) for k in ("p1", "p2") if row.get(k)]
+    return [format_phone_display(p) for p in nums]
+
+
+def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
+    max_phones = max((len(_phones_for_export(r)) for r in rows), default=0)
+    max_phones = max(1, min(6, max_phones))
+    header = (
+        ["Сайт", "Компания", "Регион"]
+        + [f"Телефон {i}" for i in range(1, max_phones + 1)]
+        + ["Источник", "Статус"]
+    )
+    data: list[list[str]] = []
+    for r in rows:
+        phones = _phones_for_export(r)
+        line = [r.get("site", ""), r.get("name", ""), r.get("region", "")]
+        for i in range(max_phones):
+            line.append(phones[i] if i < len(phones) else "")
+        line += [r.get("source", ""), r.get("status", "")]
+        data.append(line)
+    return header, data
+
+
 def _export_rows(run_id: str) -> list[dict]:
     run = db.get_run(run_id)
     if not run:
         raise HTTPException(404, "Прогон не найден")
     return run.get("results") or []
-
-
-def _format_contacts_export(row: dict) -> str:
-    parts: list[str] = []
-    for key, type_key in (("p1", "p1_type"), ("p2", "p2_type")):
-        phone = row.get(key) or ""
-        if not phone:
-            continue
-        label = row.get(type_key) or ""
-        parts.append(f"{phone} ({label})" if label else phone)
-    return ", ".join(parts)
 
 
 @app.get("/api/export/{run_id}.csv")
@@ -343,16 +360,12 @@ def export_csv(run_id: str):
     import io
 
     rows = _export_rows(run_id)
+    header, data = _export_table(rows)
     buf = io.StringIO()
     buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Сайт", "Компания", "Регион", "Контакты", "Источник", "Статус"])
-    for r in rows:
-        contacts = _format_contacts_export(r)
-        w.writerow([
-            r.get("site", ""), r.get("name", ""), r.get("region", ""),
-            contacts, r.get("source", ""), r.get("status", ""),
-        ])
+    w.writerow(header)
+    w.writerows(data)
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -366,18 +379,15 @@ def export_xls(run_id: str):
 
     rows = _export_rows(run_id)
     esc = xml_esc.escape
-    header = ["Сайт", "Компания", "Регион", "Контакты", "Источник", "Статус"]
-    data = [header] + [
-        [r.get("site", ""), r.get("name", ""), r.get("region", ""),
-         _format_contacts_export(r), r.get("source", ""), r.get("status", "")]
-        for r in rows
-    ]
+    header, data = _export_table(rows)
+    phone_col_start = 3
+    phone_col_end = phone_col_start + sum(1 for h in header if h.startswith("Телефон"))
+    text_cols = set(range(phone_col_start, phone_col_end)) | {len(header) - 1}
     xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>'
     xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
     xml += '<Styles><Style ss:ID="Text"><NumberFormat ss:Format="@"/></Style></Styles>'
     xml += "<Worksheet ss:Name=\"Сигнал-Скаут\"><Table>"
-    text_cols = {3, 5}
-    for row in data:
+    for row in [header] + data:
         xml += "<Row>"
         for i, cell in enumerate(row):
             st = ' ss:StyleID="Text"' if i in text_cols else ""

@@ -25,6 +25,8 @@ PRIORITY_PATHS = (
     "/about-us",
 )
 
+_CONTACT_PATHS = ("/contacts", "/contact", "/kontakty", "/kontakt")
+
 _PATH_HINT_RE = re.compile(
     r"(contact|kontakt|контакт|about|o-nas|o_nas|kompan|company|svyaz)",
     re.IGNORECASE,
@@ -156,8 +158,20 @@ async def parse_site(
 
     visited: set[str] = set()
     queue: list[tuple[str, int]] = [(u, 0) for u in urls_to_fetch]
+    max_pages = max(4, depth * 3)
 
-    while queue and len(visited) < max(4, depth * 3):
+    def _unique_phones() -> list[dict]:
+        seen: set[str] = set()
+        out: list[dict] = []
+        for item in all_phones_meta:
+            p = item["phone"]
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(item)
+        return out
+
+    while queue and len(visited) < max_pages:
         url, d = queue.pop(0)
         if url in visited:
             continue
@@ -186,7 +200,15 @@ async def parse_site(
 
         await log(f"{site} · найдено {len(phones)} номеров ({method})", "success")
 
-        if d < depth - 1:
+        if _unique_phones():
+            # Телефон уже есть (часто в шапке) — не обходим весь сайт, только контакты.
+            max_pages = min(max_pages, len(visited) + 2)
+            if d < 1:
+                for path in _CONTACT_PATHS:
+                    contact_url = normalize_url(path, base_origin)
+                    if contact_url and contact_url not in visited:
+                        queue.append((contact_url, 1))
+        elif d < depth - 1:
             for link in _discover_links(html, final_url, root_host, depth):
                 if link not in visited:
                     queue.append((link, d + 1))

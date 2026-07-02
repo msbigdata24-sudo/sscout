@@ -24,7 +24,7 @@ from server.filters import (
     serp_hit_relevant,
     try_catalog_page,
 )
-from server.phones import domain_from_url, pick_phones_enriched, validate_phone
+from server.phones import domain_from_url, pick_phones_enriched, pick_phones_list, validate_phone
 from server.serp import SerpError, collect_serp, group_hits_by_domain, parse_xmlriver_credentials
 
 PIPELINE_STEPS = ["analyze", "serp", "filter", "crawl", "catalog", "dedup"]
@@ -122,6 +122,7 @@ def _crawled_domains(rows: list[dict]) -> set[str]:
 def _build_row(cand: dict, cr: dict, *, phone_filter: str, regions: list[str]) -> dict:
     domain = cand["domain"]
     phones_meta = cr.get("phones_meta") or []
+    phone_list = pick_phones_list(phones_meta, phone_filter)
     p1, p2, t1, t2 = pick_phones_enriched(phones_meta, phone_filter)
     name = cr.get("title") or cand.get("title") or domain
     offer = _offer_line(cand, regions)
@@ -132,6 +133,7 @@ def _build_row(cand: dict, cr: dict, *, phone_filter: str, regions: list[str]) -
         "name": name[:120],
         "offer": offer,
         "region": region_tag,
+        "phones": phone_list,
         "p1": p1,
         "p2": p2,
         "p1_type": t1,
@@ -524,8 +526,10 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                         if site in page_text or site.split(".")[0] in page_text:
                             enriched = [{"phone": p, "type": "mobile"} for p in phones]
                             p1, p2, t1, t2 = pick_phones_enriched(enriched, phone_filter)
+                            phone_list = pick_phones_list(enriched, phone_filter)
                             if p1:
                                 row.update({
+                                    "phones": phone_list,
                                     "p1": p1, "p2": p2, "p1_type": t1, "p2_type": t2,
                                     "source": label, "status": "найден",
                                 })
