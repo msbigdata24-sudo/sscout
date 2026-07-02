@@ -108,7 +108,7 @@
 
   function isResumableRunInfo(info) {
     if (!info) return false;
-    if (info.status !== "stopped" && info.status !== "error") return false;
+    if (info.status !== "stopped") return false;
     if (info.can_resume) return true;
     const p = info.pipeline || {};
     if (p.analyze === "done") return true;
@@ -138,7 +138,7 @@
       const data = await res.json();
       for (const it of data.items || []) {
         if (site && it.client_site && it.client_site !== site) continue;
-        if (it.status !== "stopped" && it.status !== "error") continue;
+        if (it.status !== "stopped") continue;
         const st = await fetch(`${API_BASE}/api/run/${it.id}`);
         if (!st.ok) continue;
         const info = await st.json();
@@ -535,13 +535,14 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
+      const EXPECTED_VERSION = "2026-07-02-final";
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
       const bad = parts.some((p) => p.includes("✗") || p.includes("нужен"));
-      const oldBuild = data.version && data.version !== "2026-07-02-quick-v2";
+      const oldBuild = !data.version || data.version !== EXPECTED_VERSION;
       el.style.color = bad || oldBuild ? "var(--warn)" : "var(--success)";
       if (oldBuild) {
-        toast("На сервере старая версия — в Render нажмите Manual Deploy");
+        toast("Сервер устарел — в Render: Manual Deploy → latest commit (main)");
       }
       return data;
     } catch (_) {
@@ -744,6 +745,7 @@
 
   async function runQuickPipeline() {
     if (startingRun || runActive) return;
+    saveResumeRunId("");
     brief = readForm();
     if (!isValidClientSite(brief.clientSite)) {
       toast("Сначала укажите корректный URL сайта в брифе");

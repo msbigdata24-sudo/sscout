@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-02-quick-v2"
+BUILD_VERSION = "2026-07-02-final"
 
 XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
 XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()
@@ -17,13 +17,13 @@ YANDEX_XML_USER = os.getenv("YANDEX_XML_USER", "").strip()
 YANDEX_XML_KEY = os.getenv("YANDEX_XML_KEY", "").strip()
 SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
 SCRAPINGFISH_API_KEY = os.getenv("SCRAPINGFISH_API_KEY", "").strip()
-PORT = int(os.getenv("SIGNAL_SCOUT_PORT", "8765"))
+PORT = int(os.getenv("PORT") or os.getenv("SIGNAL_SCOUT_PORT") or "8765")
 CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "8"))))
 HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "15")))
 SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "30")))
 SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "45")))
 FETCH_RETRIES = max(1, min(5, int(os.getenv("FETCH_RETRIES", "3"))))
-SERP_PAGES = 4
+SERP_PAGES = max(1, min(4, int(os.getenv("SERP_PAGES", "2"))))
 DEFAULT_MAX_SITES = 50
 DB_PATH = ROOT / "data" / "signal_scout.db"
 

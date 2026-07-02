@@ -1,0 +1,16 @@
+# Render Blueprint — ветка main, автодеплой при push
+services:
+  - type: web
+    name: sscout
+    runtime: python
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: XMLRIVER_USER
+        sync: false
+      - key: XMLRIVER_KEY
+        sync: false

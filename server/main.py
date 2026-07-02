@@ -105,6 +105,7 @@ def health():
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
         "scraping_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
+        "proxy_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
         "port": PORT,
     }
 
@@ -165,7 +166,7 @@ async def api_start_run(brief: BriefModel):
         for it in db.list_runs(30):
             if (it.get("client_site") or "") != client_site:
                 continue
-            if it.get("status") not in ("stopped", "error"):
+            if it.get("status") != "stopped":
                 continue
             run = db.get_run(it["id"])
             if run and _can_resume_run(run):
@@ -406,7 +407,15 @@ def index_page():
     index = ROOT / "index.html"
     if not index.exists():
         raise HTTPException(404, "index.html не найден")
-    return FileResponse(index, media_type="text/html; charset=utf-8")
+    html = index.read_text(encoding="utf-8")
+    v = BUILD_VERSION
+    html = html.replace("/static/js/storage.js", f"/static/js/storage.js?v={v}")
+    html = html.replace("/static/js/app.js", f"/static/js/app.js?v={v}")
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/static/{path:path}")
@@ -414,4 +423,7 @@ def static_file(path: str):
     f = ROOT / "static" / path
     if not f.exists() or not f.is_file():
         raise HTTPException(404)
-    return FileResponse(f)
+    headers = {}
+    if path.endswith(".js") or path.endswith(".css"):
+        headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return FileResponse(f, headers=headers)
