@@ -205,6 +205,54 @@
       margin-top: 4px;
     }
 
+    .region-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 4px;
+    }
+
+    .region-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(61, 139, 253, 0.35);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 10px 6px 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .region-chip:hover {
+      background: rgba(240, 101, 101, 0.15);
+      border-color: var(--danger);
+    }
+
+    .region-chip-x {
+      font-size: 16px;
+      line-height: 1;
+      color: var(--muted);
+    }
+
+    .region-chip:hover .region-chip-x { color: var(--danger); }
+
+    .region-add-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .region-add-row select,
+    .region-add-row input { flex: 1; min-width: 180px; }
+
+    .region-actions { margin-top: 4px; }
+
     .radio-row {
       display: flex;
       flex-wrap: wrap;
@@ -717,8 +765,13 @@
               </div>
             </div>
             <div class="field">
-              <label for="region-presets">Регионы из списка</label>
-              <select id="region-presets" multiple size="6">
+              <label>Выбранные регионы</label>
+              <div id="region-chips" class="region-chips" aria-live="polite"></div>
+              <p class="hint" id="region-chips-empty">Пока нет регионов — сбор без привязки к области. Нажмите × на чипе, чтобы убрать регион.</p>
+            </div>
+            <div class="field region-add-row">
+              <select id="region-preset-add" aria-label="Добавить регион из списка">
+                <option value="">— выберите из списка —</option>
                 <option value="Московская область">Московская область</option>
                 <option value="Москва">Москва</option>
                 <option value="Ярославская область">Ярославская область</option>
@@ -731,11 +784,14 @@
                 <option value="Санкт-Петербург">Санкт-Петербург</option>
                 <option value="Ленинградская область">Ленинградская область</option>
               </select>
-              <p class="hint">Выберите один или несколько регионов (Ctrl+клик). Ниже можно дописать вручную.</p>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-region-add-preset">Добавить</button>
             </div>
-            <div class="field">
-              <label for="regions">Дополнительные регионы (через запятую)</label>
-              <textarea id="regions" name="regions" rows="2" placeholder="Например: Ивановская область"></textarea>
+            <div class="field region-add-row">
+              <input type="text" id="region-custom-input" placeholder="Свой регион, например: Ивановская область">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-region-add-custom">Добавить</button>
+            </div>
+            <div class="region-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-region-clear">Очистить все регионы</button>
             </div>
           </div>
 

@@ -78,26 +78,68 @@
     }
   }
 
+  let activeRegions = [];
+
+  function parseRegionsStr(regionsStr) {
+    return [...new Set(
+      (regionsStr || "").split(",").map((r) => r.trim()).filter(Boolean),
+    )];
+  }
+
   function collectRegions() {
-    const preset = [...($("#region-presets")?.selectedOptions || [])].map((o) => o.value);
-    const extra = ($("#regions")?.value || "")
-      .split(",")
-      .map((r) => r.trim())
-      .filter(Boolean);
-    return [...new Set([...preset, ...extra])].join(", ");
+    return activeRegions.join(", ");
+  }
+
+  function renderRegionChips() {
+    const box = $("#region-chips");
+    const empty = $("#region-chips-empty");
+    if (!box) return;
+    if (!activeRegions.length) {
+      box.innerHTML = "";
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    box.innerHTML = activeRegions.map((r) => {
+      const safe = r.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      return `<button type="button" class="region-chip" data-region="${safe}" title="Убрать: ${safe}">
+        <span>${safe}</span><span class="region-chip-x" aria-hidden="true">×</span>
+      </button>`;
+    }).join("");
+  }
+
+  function syncRegionFilter() {
+    fillRegionFilter(collectRegions());
+  }
+
+  function addRegion(name) {
+    const r = (name || "").trim();
+    if (!r) return false;
+    if (activeRegions.some((x) => x.toLowerCase() === r.toLowerCase())) {
+      toast("Регион уже в списке");
+      return false;
+    }
+    activeRegions.push(r);
+    renderRegionChips();
+    syncRegionFilter();
+    return true;
+  }
+
+  function removeRegion(name) {
+    activeRegions = activeRegions.filter((r) => r !== name);
+    renderRegionChips();
+    syncRegionFilter();
+  }
+
+  function clearRegions() {
+    activeRegions = [];
+    renderRegionChips();
+    syncRegionFilter();
   }
 
   function fillRegionPresets(regionsStr) {
-    const selected = new Set(
-      (regionsStr || "").split(",").map((r) => r.trim()).filter(Boolean),
-    );
-    const extra = [];
-    $$("#region-presets option").forEach((o) => {
-      o.selected = selected.has(o.value);
-      if (selected.has(o.value)) selected.delete(o.value);
-    });
-    selected.forEach((r) => extra.push(r));
-    if ($("#regions")) $("#regions").value = extra.join(", ");
+    activeRegions = parseRegionsStr(regionsStr);
+    renderRegionChips();
   }
 
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
@@ -1085,9 +1127,36 @@
       toast("Бриф сохранён");
     });
 
-    $("#region-presets")?.addEventListener("change", () => {
-      const merged = collectRegions();
-      fillRegionFilter(merged);
+    $("#region-chips")?.addEventListener("click", (e) => {
+      const chip = e.target.closest(".region-chip");
+      if (!chip?.dataset.region) return;
+      removeRegion(chip.dataset.region);
+    });
+
+    $("#btn-region-add-preset")?.addEventListener("click", () => {
+      const sel = $("#region-preset-add");
+      if (!sel?.value) {
+        toast("Выберите регион из списка");
+        return;
+      }
+      if (addRegion(sel.value)) sel.value = "";
+    });
+
+    $("#btn-region-add-custom")?.addEventListener("click", () => {
+      const inp = $("#region-custom-input");
+      if (addRegion(inp?.value)) inp.value = "";
+    });
+
+    $("#region-custom-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        $("#btn-region-add-custom")?.click();
+      }
+    });
+
+    $("#btn-region-clear")?.addEventListener("click", () => {
+      clearRegions();
+      toast("Регионы очищены");
     });
 
     $("#btn-reset-pilot").addEventListener("click", () => {
