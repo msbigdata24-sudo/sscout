@@ -21,7 +21,7 @@ from server.config import (
     YANDEX_XML_KEY,
     YANDEX_XML_USER,
 )
-from server.phones import format_phone_display
+from server.phones import normalize_digits
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
 from server.pipeline import (
@@ -325,7 +325,7 @@ def _phones_for_export(row: dict) -> list[str]:
         nums = [str(p) for p in raw if p]
     else:
         nums = [str(row.get(k)) for k in ("p1", "p2") if row.get(k)]
-    return [format_phone_display(p) for p in nums]
+    return [normalize_digits(p) for p in nums if normalize_digits(p)]
 
 
 def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
