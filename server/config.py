@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
+# Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
+BUILD_VERSION = "2026-07-02-quick-v2"
+
 XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
 XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()
 YANDEX_XML_USER = os.getenv("YANDEX_XML_USER", "").strip()

@@ -535,9 +535,14 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
+      if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
       const bad = parts.some((p) => p.includes("✗") || p.includes("нужен"));
-      el.style.color = bad ? "var(--warn)" : "var(--success)";
+      const oldBuild = data.version && data.version !== "2026-07-02-quick-v2";
+      el.style.color = bad || oldBuild ? "var(--warn)" : "var(--success)";
+      if (oldBuild) {
+        toast("На сервере старая версия — в Render нажмите Manual Deploy");
+      }
       return data;
     } catch (_) {
       apiOnline = false;

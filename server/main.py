@@ -9,7 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER, PILOT_SEED_DOMAINS
+from server.config import (
+    BUILD_VERSION,
+    PILOT_SEED_DOMAINS,
+    PORT,
+    ROOT,
+    SCRAPINGBEE_API_KEY,
+    SCRAPINGFISH_API_KEY,
+    XMLRIVER_KEY,
+    XMLRIVER_USER,
+    YANDEX_XML_KEY,
+    YANDEX_XML_USER,
+)
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
@@ -87,6 +98,9 @@ def health():
     user, key = parse_xmlriver_credentials(api_user=XMLRIVER_USER, api_key=XMLRIVER_KEY)
     return {
         "ok": True,
+        "version": BUILD_VERSION,
+        "branch": "main",
+        "features": ["quick-crawl", "pilot-queries", "resume"],
         "search_provider": "xmlriver",
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
