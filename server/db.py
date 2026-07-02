@@ -100,6 +100,18 @@ class Database:
             finally:
                 conn.close()
 
+    def find_active_run(self, client_site: str) -> dict[str, Any] | None:
+        site = (client_site or "").strip().lower().rstrip("/")
+        if not site:
+            return None
+        for it in self.list_runs(30):
+            cs = (it.get("client_site") or "").strip().lower().rstrip("/")
+            if cs != site:
+                continue
+            if it.get("status") in ("running", "pending"):
+                return it
+        return None
+
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:
             conn = self._connect()

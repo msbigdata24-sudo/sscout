@@ -4,6 +4,7 @@ import re
 from html import unescape
 from typing import Awaitable, Callable
 from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
@@ -41,7 +42,30 @@ def normalize_url(url: str, base: str | None = None) -> str:
     parsed = urlparse(raw)
     if not parsed.netloc:
         return ""
-    return parsed.geturl()
+    scheme = parsed.scheme if parsed.scheme in ("http", "https") else "https"
+    host = parsed.netloc.lower()
+    path = parsed.path or "/"
+    return f"{scheme}://{host}{path}" + (f"?{parsed.query}" if parsed.query else "")
+
+
+async def check_robots_allowed(url: str, *, user_agent: str = "SignalScoutBot/1.0") -> tuple[bool, str]:
+    root = normalize_url(url)
+    if not root:
+        return True, ""
+    parsed = urlparse(root)
+    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+    try:
+        html, _, code, _ = await fetch_page(robots_url, use_proxy=False, delay_ms=0)
+        if code >= 400 or not html:
+            return True, ""
+        rp = RobotFileParser()
+        rp.parse(html.splitlines())
+        path = parsed.path or "/"
+        if not rp.can_fetch(user_agent, path):
+            return False, "robots.txt запрещает обход"
+        return True, ""
+    except Exception:
+        return True, ""
 
 
 def _title_from_html(html: str) -> str:
@@ -118,6 +142,17 @@ async def parse_site(
             result = on_log(msg, site, status)
             if hasattr(result, "__await__"):
                 await result
+
+    allowed, robots_reason = await check_robots_allowed(root)
+    if not allowed:
+        await log(f"{site} — {robots_reason}", "skip")
+        return {
+            "ok": False,
+            "site": site,
+            "error": robots_reason,
+            "phones": [],
+            "phones_meta": [],
+        }
 
     visited: set[str] = set()
     queue: list[tuple[str, int]] = [(u, 0) for u in urls_to_fetch]

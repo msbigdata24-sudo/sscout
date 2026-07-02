@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from server.config import PORT, ROOT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
-from server.crawler import analyze_client_site
+from server.crawler import analyze_client_site, normalize_url
 from server.db import db
 from server.pipeline import (
     _can_resume_run,
     _prepare_resume_pipeline,
+    find_running_run_id,
     resume_pipeline_background,
     start_pipeline_background,
     stop_pipeline,
@@ -47,6 +49,35 @@ class BriefModel(BaseModel):
     crawlDepth: int = Field(default=2, ge=1, le=5)
     requestDelayMs: int = Field(default=500, ge=0, le=5000)
     useProxy: bool = False
+
+    @field_validator("clientSite")
+    @classmethod
+    def validate_client_site(cls, value: str) -> str:
+        normalized = normalize_client_site(value)
+        if not normalized:
+            raise ValueError("Укажите корректный URL сайта, например https://example.ru")
+        host = urlparse(normalized).netloc
+        if "." not in host:
+            raise ValueError("В адресе сайта должно быть доменное имя")
+        return normalized
+
+
+def normalize_client_site(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    url_match = re.search(r"https?://[^\s<>\"'·|]+", text, flags=re.IGNORECASE)
+    if url_match:
+        text = url_match.group(0).rstrip(".,;)")
+    elif re.search(r"[\w.-]+\.(ru|com|рф|org|net|biz)\b", text, flags=re.IGNORECASE):
+        domain_match = re.search(
+            r"([\w.-]+\.(?:ru|com|рф|org|net|biz))",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if domain_match:
+            text = domain_match.group(1)
+    return normalize_url(text)
 
 
 @app.get("/api/health")
@@ -105,9 +136,13 @@ async def api_start_run(brief: BriefModel):
             "Укажите ID и API-ключ XMLRiver в брифе (xmlriver.com) "
             "или YANDEX_XML_USER / YANDEX_XML_KEY в .env",
         )
+    client_site = brief.clientSite.strip()
+    if find_running_run_id(client_site) or db.find_active_run(client_site):
+        active = db.find_active_run(client_site)
+        run_id = active["id"] if active else find_running_run_id(client_site)
+        raise HTTPException(409, f"Сбор для этого клиента уже выполняется (прогон {run_id})")
     # Если есть остановленный/упавший прогон по этому же клиенту — продолжаем его,
     # чтобы повторный «Запустить сбор» не начинал всё сначала.
-    client_site = brief.clientSite.strip()
     try:
         for it in db.list_runs(30):
             if (it.get("client_site") or "") != client_site:
@@ -122,7 +157,10 @@ async def api_start_run(brief: BriefModel):
         # Авто-resume — best-effort. Если что-то пошло не так, стартуем новый прогон.
         pass
 
-    run_id = await start_pipeline_background(brief.model_dump())
+    try:
+        run_id = await start_pipeline_background(brief.model_dump())
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return {"run_id": run_id, "status": "pending", "resumed": False}
 
 
@@ -245,6 +283,17 @@ def _export_rows(run_id: str) -> list[dict]:
     return run.get("results") or []
 
 
+def _format_contacts_export(row: dict) -> str:
+    parts: list[str] = []
+    for key, type_key in (("p1", "p1_type"), ("p2", "p2_type")):
+        phone = row.get(key) or ""
+        if not phone:
+            continue
+        label = row.get(type_key) or ""
+        parts.append(f"{phone} ({label})" if label else phone)
+    return ", ".join(parts)
+
+
 @app.get("/api/export/{run_id}.csv")
 def export_csv(run_id: str):
     import csv
@@ -254,12 +303,12 @@ def export_csv(run_id: str):
     buf = io.StringIO()
     buf.write("\ufeff")
     w = csv.writer(buf, delimiter=";")
-    w.writerow(["Сайт", "Компания", "Регион", "Телефон 1", "Тип 1", "Телефон 2", "Тип 2", "Источник", "Статус"])
+    w.writerow(["Сайт", "Компания", "Регион", "Контакты", "Источник", "Статус"])
     for r in rows:
+        contacts = _format_contacts_export(r)
         w.writerow([
             r.get("site", ""), r.get("name", ""), r.get("region", ""),
-            r.get("p1", ""), r.get("p1_type", ""), r.get("p2", ""), r.get("p2_type", ""),
-            r.get("source", ""), r.get("status", ""),
+            contacts, r.get("source", ""), r.get("status", ""),
         ])
     return Response(
         content=buf.getvalue(),
@@ -274,11 +323,10 @@ def export_xls(run_id: str):
 
     rows = _export_rows(run_id)
     esc = xml_esc.escape
-    header = ["Сайт", "Компания", "Регион", "Телефон 1", "Тип 1", "Телефон 2", "Тип 2", "Источник", "Статус"]
+    header = ["Сайт", "Компания", "Регион", "Контакты", "Источник", "Статус"]
     data = [header] + [
         [r.get("site", ""), r.get("name", ""), r.get("region", ""),
-         r.get("p1", ""), r.get("p1_type", ""), r.get("p2", ""), r.get("p2_type", ""),
-         r.get("source", ""), r.get("status", "")]
+         _format_contacts_export(r), r.get("source", ""), r.get("status", "")]
         for r in rows
     ]
     xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>'

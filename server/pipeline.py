@@ -350,9 +350,14 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                     return
                 domain = cand["domain"]
                 url = cand["urls"][0] if cand.get("urls") else f"https://{domain}"
-                alive, final_url, _code = await check_site_alive(url)
+                alive, final_url, _code = await check_site_alive(url, require_phone=check_alive)
                 if check_alive and not alive:
-                    _log(pipeline, f"{domain} — сайт не отвечает", domain, "error")
+                    _log(
+                        pipeline,
+                        f"{domain} — не подходит (не отвечает, парковка или нет телефона на главной)",
+                        domain,
+                        "error",
+                    )
                     continue
                 cand["final_url"] = final_url
                 alive_candidates.append(cand)
@@ -480,7 +485,30 @@ def stop_pipeline(run_id: str) -> None:
     _running[run_id] = False
 
 
+def find_running_run_id(client_site: str) -> str | None:
+    site = (client_site or "").strip().lower().rstrip("/")
+    if not site:
+        return None
+    for run_id, active in _running.items():
+        if not active:
+            continue
+        run = db.get_run(run_id)
+        if not run:
+            continue
+        cs = (run.get("brief") or {}).get("clientSite", "").strip().lower().rstrip("/")
+        if cs == site:
+            return run_id
+    return None
+
+
 async def start_pipeline_background(brief: dict[str, Any]) -> str:
+    client_site = (brief.get("clientSite") or "").strip()
+    mem_id = find_running_run_id(client_site)
+    if mem_id:
+        raise ValueError(f"Сбор для этого клиента уже выполняется ({mem_id})")
+    active = db.find_active_run(client_site)
+    if active:
+        raise ValueError(f"Сбор для этого клиента уже выполняется ({active['id']})")
     run_id = uuid.uuid4().hex[:12]
     db.create_run(run_id, brief)
     asyncio.create_task(run_pipeline(run_id, brief))

@@ -104,7 +104,23 @@ def region_matches(text: str, regions: list[str], mode: str) -> bool:
     return hits == 0
 
 
-async def check_site_alive(url: str) -> tuple[bool, str, int]:
+_PHONE_HINT_RE = re.compile(
+    r"(?:\+7|8)[\s\-()]*(?:\d[\s\-()]*){9,}|tel:\s*\+?\d",
+    re.IGNORECASE,
+)
+
+
+def _html_has_phone_hint(html: str) -> bool:
+    if not html:
+        return False
+    if _PHONE_HINT_RE.search(html[:80000]):
+        return True
+    from server.phones import extract_phones
+
+    return bool(extract_phones(html[:120000], ""))
+
+
+async def check_site_alive(url: str, *, require_phone: bool = False) -> tuple[bool, str, int]:
     headers = {"User-Agent": USER_AGENT}
     try:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers=headers, follow_redirects=True) as client:
@@ -118,6 +134,8 @@ async def check_site_alive(url: str) -> tuple[bool, str, int]:
             parking = ("domain is for sale", "parked", "купить домен", "coming soon")
             low = html[:3000].lower()
             if any(p in low for p in parking):
+                return False, final, resp.status_code
+            if require_phone and not _html_has_phone_hint(html):
                 return False, final, resp.status_code
             return True, final, resp.status_code
     except Exception:

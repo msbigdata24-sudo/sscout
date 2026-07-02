@@ -264,6 +264,19 @@
     }
 
     .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+    .btn.is-loading::after {
+      content: "";
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-left: 8px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      vertical-align: -2px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .btn-ghost {
       background: var(--surface-2);
@@ -588,6 +601,25 @@
       margin-bottom: 10px;
       background: var(--surface-2);
     }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .history-table th,
+    .history-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .history-table th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .contacts-cell .phone-wrap { display: inline-flex; }
     .inner-table { width: 100%; margin-top: 8px; }
     .group-row td { background: var(--surface-2); }
     details summary { cursor: pointer; font-weight: 700; }
@@ -685,9 +717,25 @@
               </div>
             </div>
             <div class="field">
-              <label for="regions">Регионы (через запятую)</label>
-              <textarea id="regions" name="regions" rows="2"></textarea>
-              <p class="hint">Одна строка — один регион или город с областью.</p>
+              <label for="region-presets">Регионы из списка</label>
+              <select id="region-presets" multiple size="6">
+                <option value="Московская область">Московская область</option>
+                <option value="Москва">Москва</option>
+                <option value="Ярославская область">Ярославская область</option>
+                <option value="Владимирская область">Владимирская область</option>
+                <option value="Нижегородская область">Нижегородская область</option>
+                <option value="Тверская область">Тверская область</option>
+                <option value="Калужская область">Калужская область</option>
+                <option value="Тульская область">Тульская область</option>
+                <option value="Рязанская область">Рязанская область</option>
+                <option value="Санкт-Петербург">Санкт-Петербург</option>
+                <option value="Ленинградская область">Ленинградская область</option>
+              </select>
+              <p class="hint">Выберите один или несколько регионов (Ctrl+клик). Ниже можно дописать вручную.</p>
+            </div>
+            <div class="field">
+              <label for="regions">Дополнительные регионы (через запятую)</label>
+              <textarea id="regions" name="regions" rows="2" placeholder="Например: Ивановская область"></textarea>
             </div>
           </div>
 
@@ -754,7 +802,7 @@
                 </label>
                 <label class="radio-pill" style="width:fit-content">
                   <input type="checkbox" id="check-alive" name="checkAlive" checked>
-                  Проверять, что сайт живой (2026)
+                  Живой сайт + телефон на главной
                 </label>
               </div>
             </div>
@@ -847,8 +895,7 @@
                   <th data-sort="name">Компания</th>
                   <th data-sort="region">Регион</th>
                   <th data-sort="offer">Услуга</th>
-                  <th data-sort="p1">Телефон 1</th>
-                  <th data-sort="p2">Телефон 2</th>
+                  <th>Контакты</th>
                   <th data-sort="source">Источник</th>
                   <th data-sort="status">Статус</th>
                 </tr>
@@ -862,24 +909,10 @@
       <section class="page" id="page-history">
         <header class="page-head">
           <h2>История запусков</h2>
-          <p>Все сессии сохраняются на сервере. Можно открыть или сравнить.</p>
+          <p>Список прошлых сборов по этому серверу. Откройте результат или продолжите остановленный прогон.</p>
         </header>
         <div class="card">
           <div id="history-list"></div>
-          <div class="grid-2" style="margin-top:20px">
-            <div class="field">
-              <label for="compare-a">Сессия A (id)</label>
-              <input type="text" id="compare-a" placeholder="id прогона">
-            </div>
-            <div class="field">
-              <label for="compare-b">Сессия B (id)</label>
-              <input type="text" id="compare-b" placeholder="id прогона">
-            </div>
-          </div>
-          <div class="actions">
-            <button type="button" class="btn btn-ghost" id="btn-compare">Сравнить две сессии</button>
-          </div>
-          <div id="compare-result" class="hint" style="margin-top:12px"></div>
         </div>
       </section>
     </main>

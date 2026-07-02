@@ -51,7 +51,54 @@
   let tablePage = 1;
   let sortCol = "";
   let sortDir = 1;
+  let startingRun = false;
   const PAGE_SIZE = 50;
+
+  function normalizeClientSite(raw) {
+    let s = (raw || "").trim();
+    if (!s) return "";
+    const urlMatch = s.match(/https?:\/\/[^\s<>"'·|]+/i);
+    if (urlMatch) return urlMatch[0].replace(/[.,;)]+$/, "");
+    const domainMatch = s.match(/([\w.-]+\.(?:ru|com|рф|org|net|biz))/i);
+    if (domainMatch && !s.includes(" ")) {
+      const host = domainMatch[1];
+      return /^https?:\/\//i.test(s) ? s : `https://${host}`;
+    }
+    return s;
+  }
+
+  function isValidClientSite(raw) {
+    const normalized = normalizeClientSite(raw);
+    if (!normalized) return false;
+    try {
+      const u = new URL(normalized.startsWith("http") ? normalized : `https://${normalized}`);
+      return Boolean(u.hostname && u.hostname.includes("."));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function collectRegions() {
+    const preset = [...($("#region-presets")?.selectedOptions || [])].map((o) => o.value);
+    const extra = ($("#regions")?.value || "")
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    return [...new Set([...preset, ...extra])].join(", ");
+  }
+
+  function fillRegionPresets(regionsStr) {
+    const selected = new Set(
+      (regionsStr || "").split(",").map((r) => r.trim()).filter(Boolean),
+    );
+    const extra = [];
+    $$("#region-presets option").forEach((o) => {
+      o.selected = selected.has(o.value);
+      if (selected.has(o.value)) selected.delete(o.value);
+    });
+    selected.forEach((r) => extra.push(r));
+    if ($("#regions")) $("#regions").value = extra.join(", ");
+  }
 
   function saveResumeRunId(id) {
     window.SSStorage.saveResumeRunId(id || "");
@@ -152,14 +199,22 @@
     </span>`;
   }
 
+  function renderContactsCell(r) {
+    const parts = [];
+    if (r.p1) parts.push(renderPhoneCell(r.p1, r.p1_type, r.p1_valid));
+    if (r.p2) parts.push(renderPhoneCell(r.p2, r.p2_type, r.p2_valid));
+    return parts.length ? parts.join("<span class='contacts-sep'>, </span>") : "—";
+  }
+
   function readForm() {
     const sources = [...$("#sources").selectedOptions].map((o) => o.value);
+    const clientSite = normalizeClientSite($("#client-site").value);
     return {
       clientName: $("#client-name").value.trim(),
-      clientSite: $("#client-site").value.trim(),
+      clientSite,
       niche: $("#niche").value.trim(),
       regionMode: document.querySelector('input[name="regionMode"]:checked')?.value || "include",
-      regions: $("#regions").value.trim(),
+      regions: collectRegions(),
       queries: $("#queries").value.trim(),
       excludeDomains: $("#exclude-domains").value.trim(),
       phoneFilter: $("#phone-filter").value,
@@ -181,7 +236,7 @@
     $$('input[name="regionMode"]').forEach((r) => {
       r.checked = r.value === (data.regionMode || "include");
     });
-    $("#regions").value = data.regions || "";
+    fillRegionPresets(data.regions || "");
     $("#queries").value = data.queries || "";
     $("#exclude-domains").value = data.excludeDomains || "";
     $("#phone-filter").value = data.phoneFilter || "business";
@@ -375,8 +430,7 @@
         <td>${r.name}</td>
         <td>${r.region || "—"}</td>
         <td>${r.offer}</td>
-        <td>${renderPhoneCell(r.p1, r.p1_type, r.p1_valid)}</td>
-        <td>${renderPhoneCell(r.p2, r.p2_type, r.p2_valid)}</td>
+        <td class="contacts-cell">${renderContactsCell(r)}</td>
         <td>${r.source}</td>
         <td class="status-cell" data-site="${r.site}">${statusTag(r.status)}</td>
       </tr>`;
@@ -385,7 +439,7 @@
     if (groupMode) {
       const groups = groupByRegion(pageRows);
       body.innerHTML = Object.entries(groups).map(([reg, items]) => `
-        <tr class="group-row"><td colspan="8"><details open><summary>${reg} (${items.length})</summary>
+        <tr class="group-row"><td colspan="7"><details open><summary>${reg} (${items.length})</summary>
         <table class="inner-table">${items.map(rowHtml).join("")}</table></details></td></tr>`).join("");
     } else {
       body.innerHTML = pageRows.map(rowHtml).join("");
@@ -483,6 +537,16 @@
     }
   }
 
+  function pipelineStepLabel(state) {
+    const done = PIPELINE_STEPS.filter((s) => state[s.id] === "done").length;
+    const running = PIPELINE_STEPS.find((s) => state[s.id] === "running");
+    if (running) return `Шаг ${done + 1}/${PIPELINE_STEPS.length} · ${running.title}…`;
+    if (done > 0 && done < PIPELINE_STEPS.length) {
+      return `Шаг ${done}/${PIPELINE_STEPS.length} · подготовка следующего этапа…`;
+    }
+    return "";
+  }
+
   function applyPipeline(pipeline, progress, meta = {}) {
     const state = {};
     PIPELINE_STEPS.forEach((s) => {
@@ -493,7 +557,7 @@
 
     tickElapsed();
 
-    let label = meta.current_step_label || "";
+    let label = meta.current_step_label || pipelineStepLabel(state) || "";
     if (!label) {
       const running = PIPELINE_STEPS.find((s) => state[s.id] === "running");
       if (running) label = `Сейчас: ${running.title}…`;
@@ -547,9 +611,14 @@
     if (data.status === "error") {
       clearInterval(pollTimer);
       stopRunTimer();
-      applyPipeline(data.pipeline || {}, data.progress || 0, { status: "error" });
+      const logs = [...(data.pipeline?.logs || [])];
+      if (data.error && !logs.some((l) => l.msg === data.error)) {
+        logs.push({ ts: "--:--:--", msg: data.error, status: "error" });
+      }
+      applyPipeline({ ...(data.pipeline || {}), logs }, data.progress || 0, { status: "error" });
       toast(data.error || "Ошибка");
       setRunButtons(false);
+      refreshStartButtonLabel();
       return;
     }
     if (data.status === "stopped") {
@@ -596,14 +665,17 @@
   }
 
   function setRunButtons(running) {
-    const hasBrief = Boolean(brief?.clientSite);
+    const hasBrief = Boolean(brief?.clientSite) && isValidClientSite(brief?.clientSite);
     const startBtn = $("#btn-start");
     if (startBtn) {
-      startBtn.disabled = running || !hasBrief;
+      startBtn.disabled = running || !hasBrief || startingRun;
       startBtn.setAttribute("aria-busy", running ? "true" : "false");
+      startBtn.classList.toggle("is-loading", running);
+      if (running) startBtn.textContent = "Сбор идёт…";
     }
     const stopBtn = $("#btn-stop");
     if (stopBtn) stopBtn.disabled = !running;
+    if (!running && startBtn) refreshStartButtonLabel();
   }
 
   function resetRunUi(message) {
@@ -653,14 +725,21 @@
   }
 
   async function runPipeline() {
+    if (startingRun || runActive) return;
     brief = readForm();
+    if (!isValidClientSite(brief.clientSite)) {
+      toast("Укажите корректный URL сайта, например https://opalubka-domstroy.ru");
+      return;
+    }
     window.SSStorage.saveBrief(brief);
+    $("#client-site").value = brief.clientSite;
 
     const resumeId = await findResumableRunId();
     if (resumeId) {
       return resumePipeline(resumeId);
     }
 
+    startingRun = true;
     saveResumeRunId("");
     setRunButtons(true);
     startRunTimer();
@@ -670,10 +749,14 @@
     const health = await checkApi();
     if (!apiOnline) {
       resetRunUi("Сервер офлайн");
+      startingRun = false;
+      setRunButtons(false);
       return toast("Запустите run.ps1");
     }
     if (!isSearchConfigured(health, brief)) {
       resetRunUi("Нужен ключ XMLRiver");
+      startingRun = false;
+      setRunButtons(false);
       return toast("Укажите ID и ключ XMLRiver в брифе или в .env");
     }
 
@@ -717,6 +800,9 @@
       clearInterval(waitUi);
       resetRunUi(e.message || "Не удалось запустить сбор");
       toast(e.message || "Ошибка запуска");
+    } finally {
+      startingRun = false;
+      if (!runActive) setRunButtons(false);
     }
   }
 
@@ -754,14 +840,35 @@
     }
     const res = await fetch(`${API_BASE}/api/history`);
     const data = await res.json();
-    box.innerHTML = (data.items || []).map((it) => `
-      <div class="history-item">
-        <div><strong>${it.client_name || "—"}</strong> · ${new Date(it.created_at).toLocaleString("ru-RU")}</div>
-        <div class="hint">${it.sites_count} сайтов · ${it.phones_count} тел. · ${it.status}</div>
-        <div class="actions" style="margin-top:8px">
-          <button type="button" class="btn btn-ghost btn-sm" data-load-run="${it.id}">Открыть</button>
-        </div>
-      </div>`).join("") || "<p class='hint'>Пока нет прогонов</p>";
+    const items = data.items || [];
+    if (!items.length) {
+      box.innerHTML = "<p class='hint'>Пока нет прогонов</p>";
+      return;
+    }
+    box.innerHTML = `
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Клиент</th>
+            <th>Сайтов</th>
+            <th>Телефонов</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((it) => `
+            <tr>
+              <td>${new Date(it.created_at).toLocaleString("ru-RU")}</td>
+              <td>${it.client_name || "—"}</td>
+              <td>${it.sites_count}</td>
+              <td>${it.phones_count}</td>
+              <td>${it.status}</td>
+              <td><button type="button" class="btn btn-ghost btn-sm" data-load-run="${it.id}">Открыть</button></td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
 
     box.querySelectorAll("[data-load-run]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -773,6 +880,7 @@
         isLiveRun = !p.is_demo;
         window.SSStorage.saveResults(results);
         enableResultsUI();
+        $("#results-subtitle").textContent = `${p.brief?.clientName || brief.clientName} · ${results.length} строк`;
         showPage("results");
       });
     });
@@ -819,10 +927,10 @@
 
   function updateRunUI() {
     setRunButtons(runActive);
-    const hasBrief = Boolean(brief?.clientSite);
+    const hasBrief = Boolean(brief?.clientSite) && isValidClientSite(brief?.clientSite);
     $("#run-subtitle").textContent = hasBrief
       ? `Клиент: ${brief.clientName} · ${brief.clientSite}`
-      : "Сначала сохраните бриф.";
+      : "Сначала сохраните бриф с корректным URL сайта.";
     refreshStartButtonLabel();
   }
 
@@ -845,10 +953,20 @@
     $("#brief-form").addEventListener("submit", (e) => {
       e.preventDefault();
       brief = readForm();
+      if (!isValidClientSite(brief.clientSite)) {
+        toast("В поле «Сайт клиента» нужен адрес вида https://example.ru");
+        return;
+      }
+      $("#client-site").value = brief.clientSite;
       window.SSStorage.saveBrief(brief);
       fillRegionFilter(brief.regions);
       updateRunUI();
       toast("Бриф сохранён");
+    });
+
+    $("#region-presets")?.addEventListener("change", () => {
+      const merged = collectRegions();
+      fillRegionFilter(merged);
     });
 
     $("#btn-reset-pilot").addEventListener("click", () => {
@@ -887,7 +1005,6 @@
     $("#group-regions")?.addEventListener("change", () => renderTable(results));
     $("#btn-export").addEventListener("click", exportCsv);
     $("#btn-export-xls").addEventListener("click", exportXls);
-    $("#btn-compare")?.addEventListener("click", compareSessions);
     $("#btn-prev-page")?.addEventListener("click", () => { if (tablePage > 1) { tablePage--; renderTable(results); } });
     $("#btn-next-page")?.addEventListener("click", () => { tablePage++; renderTable(results); });
 
