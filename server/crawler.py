@@ -86,6 +86,7 @@ async def parse_site(
     use_proxy: bool = False,
     delay_ms: int = 500,
     on_log: LogFn | None = None,
+    paths: tuple[str, ...] | None = None,
 ) -> dict:
     """Парсинг сайта: главная, контакты, footer, глубина 1–5."""
     root = normalize_url(f"https://{site}" if "://" not in site else site)
@@ -96,8 +97,12 @@ async def parse_site(
     parsed_root = urlparse(root)
     base_origin = f"{parsed_root.scheme}://{parsed_root.netloc}"
 
+    def _is_home_page(url: str) -> bool:
+        return (urlparse(url).path or "/").rstrip("/") in ("", "/")
+
+    path_list = paths if paths is not None else PRIORITY_PATHS
     urls_to_fetch: list[str] = []
-    for path in PRIORITY_PATHS:
+    for path in path_list:
         u = normalize_url(path or "/", base_origin) if path else base_origin + "/"
         if u not in urls_to_fetch:
             urls_to_fetch.append(u)
@@ -129,7 +134,11 @@ async def parse_site(
         )
         if not html:
             last_error = method
-            await log(f"Ошибка {site}: {method}", "error")
+            page_path = urlparse(url).path or "/"
+            if _is_home_page(url):
+                await log(f"Ошибка {site}: {method}", "error")
+            else:
+                await log(f"{site} · {page_path} — нет страницы (пропуск)", "skip")
             continue
 
         pages_ok += 1
@@ -192,7 +201,8 @@ async def analyze_client_site(site_url: str, **kwargs) -> dict:
     host = urlparse(root).netloc.lower().lstrip("www.")
     depth = int(kwargs.pop("depth", 1))
     delay_ms = int(kwargs.pop("delay_ms", 0))
-    data = await parse_site(host, depth=depth, delay_ms=delay_ms, **kwargs)
+    paths = ("", "/contacts", "/kontakty") if depth <= 1 else None
+    data = await parse_site(host, depth=depth, delay_ms=delay_ms, paths=paths, **kwargs)
     if not data.get("ok"):
         return {"ok": False, "error": data.get("error") or "Сайт недоступен"}
     return {

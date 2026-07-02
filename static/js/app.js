@@ -220,6 +220,7 @@
       if (status === "done") labelEl.innerHTML = "<strong>Готово!</strong> Переход к результатам…";
       else if (status === "error") labelEl.innerHTML = "<strong>Ошибка</strong> — см. лог ниже";
       else if (status === "stopped") labelEl.textContent = "Остановлено";
+      else if (status === "running" || status === "pending") labelEl.textContent = label || "Сбор выполняется…";
       else if (label) labelEl.textContent = label;
     }
   }
@@ -235,7 +236,7 @@
       return;
     }
     box.innerHTML = logs.slice(-80).map((l) => {
-      const cls = l.status === "error" ? "log-err" : l.status === "success" ? "log-ok" : "";
+      const cls = l.status === "error" ? "log-err" : l.status === "success" ? "log-ok" : l.status === "skip" ? "log-muted" : "";
       return `<div class="log-line ${cls}"><span class="log-ts">${l.ts}</span> ${l.msg}</div>`;
     }).join("");
     box.scrollTop = box.scrollHeight;
@@ -486,8 +487,7 @@
       notifyDone(phones);
       toast(`Сбор завершён за ${formatElapsed(Math.floor((Date.now() - runStartedAt) / 1000))}`);
       setTimeout(() => showPage("results"), 400);
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      setRunButtons(false);
       return;
     }
     if (data.status === "error") {
@@ -495,8 +495,8 @@
       stopRunTimer();
       applyPipeline(data.pipeline || {}, data.progress || 0, { status: "error" });
       toast(data.error || "Ошибка");
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      setRunButtons(false);
+      return;
     }
     if (data.status === "stopped") {
       clearInterval(pollTimer);
@@ -517,8 +517,11 @@
       } else {
         toast("Сбор остановлен");
       }
-      $("#btn-start").disabled = false;
-      $("#btn-stop").disabled = true;
+      setRunButtons(false);
+      return;
+    }
+    if (data.status === "running" || data.status === "pending") {
+      setRunButtons(true);
     }
   }
 
@@ -537,13 +540,23 @@
     }
   }
 
+  function setRunButtons(running) {
+    const hasBrief = Boolean(brief?.clientSite);
+    const startBtn = $("#btn-start");
+    if (startBtn) {
+      startBtn.disabled = running || !hasBrief;
+      startBtn.setAttribute("aria-busy", running ? "true" : "false");
+    }
+    const stopBtn = $("#btn-stop");
+    if (stopBtn) stopBtn.disabled = !running;
+  }
+
   function resetRunUi(message) {
     clearInterval(pollTimer);
     pollTimer = null;
     stopRunTimer();
     currentRunId = null;
-    $("#btn-start").disabled = !brief?.clientSite;
-    $("#btn-stop").disabled = true;
+    setRunButtons(false);
     if (message) {
       setProgressUI(0, message, "error");
       renderLiveLogs([{ ts: "--:--:--", msg: message, status: "error" }], false);
@@ -567,7 +580,7 @@
       clearInterval(pollTimer);
       stopRunTimer();
       toast(e.message);
-      $("#btn-start").disabled = false;
+      setRunButtons(false);
     }), 1500);
     await pollRun(runId);
   }
@@ -590,8 +603,7 @@
       sessionStorage.removeItem(RESUME_KEY);
     }
 
-    $("#btn-start").disabled = true;
-    $("#btn-stop").disabled = false;
+    setRunButtons(true);
     startRunTimer();
     setProgressUI(1, "Проверка сервера…", "running");
     renderLiveLogs(null, true);
@@ -647,8 +659,7 @@
   async function resumePipeline(runId) {
     brief = readForm();
     window.SSStorage.saveBrief(brief);
-    $("#btn-start").disabled = true;
-    $("#btn-stop").disabled = false;
+    setRunButtons(true);
     startRunTimer();
     setProgressUI(5, "Продолжение сбора…", "running");
     renderLiveLogs(null, true);
@@ -740,8 +751,8 @@
   }
 
   function updateRunUI() {
+    setRunButtons(runActive);
     const hasBrief = Boolean(brief?.clientSite);
-    $("#btn-start").disabled = !hasBrief;
     $("#run-subtitle").textContent = hasBrief
       ? `Клиент: ${brief.clientName} · ${brief.clientSite}`
       : "Сначала сохраните бриф.";
