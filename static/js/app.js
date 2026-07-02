@@ -112,17 +112,26 @@
     fillRegionFilter(collectRegions());
   }
 
-  function addRegion(name) {
-    const r = (name || "").trim();
-    if (!r) return false;
-    if (activeRegions.some((x) => x.toLowerCase() === r.toLowerCase())) {
-      toast("Регион уже в списке");
-      return false;
+  function addRegions(names) {
+    let added = 0;
+    for (const name of names) {
+      const r = (name || "").trim();
+      if (!r) continue;
+      if (activeRegions.some((x) => x.toLowerCase() === r.toLowerCase())) continue;
+      activeRegions.push(r);
+      added += 1;
     }
-    activeRegions.push(r);
-    renderRegionChips();
-    syncRegionFilter();
-    return true;
+    if (added) {
+      renderRegionChips();
+      syncRegionFilter();
+    }
+    return added;
+  }
+
+  function addRegion(name) {
+    const added = addRegions([name]);
+    if (!added) toast("Регион уже в списке");
+    return added > 0;
   }
 
   function removeRegion(name) {
@@ -1135,11 +1144,18 @@
 
     $("#btn-region-add-preset")?.addEventListener("click", () => {
       const sel = $("#region-preset-add");
-      if (!sel?.value) {
-        toast("Выберите регион из списка");
+      const picked = [...(sel?.selectedOptions || [])].map((o) => o.value).filter(Boolean);
+      if (!picked.length) {
+        toast("Выберите регионы в списке (Ctrl+клик для нескольких)");
         return;
       }
-      if (addRegion(sel.value)) sel.value = "";
+      const added = addRegions(picked);
+      if (sel) $$("#region-preset-add option").forEach((o) => { o.selected = false; });
+      if (added) {
+        toast(added === 1 ? "Добавлен 1 регион" : `Добавлено регионов: ${added}`);
+      } else {
+        toast("Все выбранные регионы уже в списке");
+      }
     });
 
     $("#btn-region-add-custom")?.addEventListener("click", () => {
