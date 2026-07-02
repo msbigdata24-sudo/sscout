@@ -18,6 +18,7 @@ PORT = int(os.getenv("SIGNAL_SCOUT_PORT", "8765"))
 CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "8"))))
 HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "15")))
 SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "30")))
+SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "45")))
 FETCH_RETRIES = max(1, min(5, int(os.getenv("FETCH_RETRIES", "3"))))
 SERP_PAGES = 4
 DEFAULT_MAX_SITES = 50
