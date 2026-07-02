@@ -104,8 +104,25 @@ async def api_start_run(brief: BriefModel):
             "Укажите ID и API-ключ XMLRiver в брифе (xmlriver.com) "
             "или YANDEX_XML_USER / YANDEX_XML_KEY в .env",
         )
+    # Если есть остановленный/упавший прогон по этому же клиенту — продолжаем его,
+    # чтобы повторный «Запустить сбор» не начинал всё сначала.
+    client_site = brief.clientSite.strip()
+    try:
+        for it in db.list_runs(30):
+            if (it.get("client_site") or "") != client_site:
+                continue
+            if it.get("status") not in ("stopped", "error"):
+                continue
+            run = db.get_run(it["id"])
+            if run and _can_resume_run(run):
+                await resume_pipeline_background(run["id"])
+                return {"run_id": run["id"], "status": "running", "resumed": True}
+    except Exception:
+        # Авто-resume — best-effort. Если что-то пошло не так, стартуем новый прогон.
+        pass
+
     run_id = await start_pipeline_background(brief.model_dump())
-    return {"run_id": run_id, "status": "pending"}
+    return {"run_id": run_id, "status": "pending", "resumed": False}
 
 
 PIPELINE_STEP_IDS = ("analyze", "serp", "filter", "crawl", "catalog", "dedup")
