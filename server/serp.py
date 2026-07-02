@@ -9,7 +9,9 @@ from server.config import SERP_PAGES, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KE
 from server.phones import domain_from_url
 
 YANDEX_XML_URL = "https://yandex.ru/search/xml"
-XMLRIVER_YANDEX_URL = "https://xmlriver.com/yandex/xml"
+# «Живой поиск» — как в кабинете XMLRiver (вкладка Яндекс → Живой поиск)
+XMLRIVER_YANDEX_URL = "https://xmlriver.com/search_yandex/xml"
+XMLRIVER_YANDEX_API_URL = "https://xmlriver.com/yandex/xml"
 XMLRIVER_GOOGLE_URL = "https://xmlriver.com/search/xml"
 SERP_RETRY_DELAY_SEC = 8
 SERP_MAX_RETRIES = 3
@@ -112,7 +114,6 @@ async def _xmlriver_request(
         "query": query,
         "page": api_page,
         "groupby": 10,
-        "format": "xml",
     }
     if extra:
         params.update(extra)
@@ -173,7 +174,7 @@ async def search_via_xmlriver(
     hits: list[dict] = []
     async with httpx.AsyncClient(timeout=60.0) as client:
         for page in range(pages):
-            y_extra: dict = {"lang": "ru", "domain": "ru", "device": "desktop", "format": "xml"}
+            y_extra: dict = {"lang": "ru", "domain": "ru", "device": "desktop"}
             if lr:
                 y_extra["lr"] = lr
             try:
