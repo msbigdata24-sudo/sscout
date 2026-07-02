@@ -260,7 +260,7 @@
 
     .region-preset-block select {
       width: 100%;
-      min-height: 140px;
+      min-height: 220px;
     }
 
     .region-actions { margin-top: 4px; }
@@ -782,28 +782,12 @@
               <p class="hint" id="region-chips-empty">Пока нет регионов — сбор без привязки к области. Нажмите × на чипе, чтобы убрать регион.</p>
             </div>
             <div class="field">
-              <label for="region-preset-add">Регионы из списка</label>
+              <label for="region-preset-add">Регионы из списка (89 субъектов РФ)</label>
               <div class="region-preset-block">
-                <select id="region-preset-add" multiple size="6" aria-label="Выбор регионов из списка">
-                  <option value="Московская область">Московская область</option>
-                  <option value="Москва">Москва</option>
-                  <option value="Ярославская область">Ярославская область</option>
-                  <option value="Владимирская область">Владимирская область</option>
-                  <option value="Нижегородская область">Нижегородская область</option>
-                  <option value="Тверская область">Тверская область</option>
-                  <option value="Калужская область">Калужская область</option>
-                  <option value="Тульская область">Тульская область</option>
-                  <option value="Рязанская область">Рязанская область</option>
-                  <option value="Санкт-Петербург">Санкт-Петербург</option>
-                  <option value="Ленинградская область">Ленинградская область</option>
-                </select>
+                <select id="region-preset-add" multiple size="12" aria-label="Выбор регионов из списка"></select>
                 <button type="button" class="btn btn-ghost btn-sm" id="btn-region-add-preset">Добавить выбранные</button>
               </div>
-              <p class="hint">Выделите один или несколько регионов (Ctrl+клик) и нажмите «Добавить выбранные».</p>
-            </div>
-            <div class="field region-add-row">
-              <input type="text" id="region-custom-input" placeholder="Свой регион, например: Ивановская область">
-              <button type="button" class="btn btn-ghost btn-sm" id="btn-region-add-custom">Добавить</button>
+              <p class="hint">Выделите один или несколько (Ctrl+клик) и нажмите «Добавить выбранные». Лишние убираются крестиком на чипе.</p>
             </div>
             <div class="region-actions">
               <button type="button" class="btn btn-ghost btn-sm" id="btn-region-clear">Очистить все регионы</button>
@@ -994,6 +978,7 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script src="/static/js/storage.js"></script>
+  <script src="/static/js/regions-ru.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

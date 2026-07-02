@@ -151,6 +151,16 @@
     renderRegionChips();
   }
 
+  function initRegionPresetSelect() {
+    const sel = $("#region-preset-add");
+    const list = window.SS_REGIONS_RU || [];
+    if (!sel || !list.length) return;
+    sel.innerHTML = list.map((name) => {
+      const safe = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      return `<option value="${safe}">${safe}</option>`;
+    }).join("");
+  }
+
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
 
   function clearStaleRun(message) {
@@ -1103,6 +1113,7 @@
   }
 
   function init() {
+    initRegionPresetSelect();
     brief = ensureBriefQueries(window.SSStorage.loadBrief(PILOT));
     results = window.SSStorage.loadResults();
     fillForm(brief);
@@ -1156,18 +1167,6 @@
         toast(added === 1 ? "Добавлен 1 регион" : `Добавлено регионов: ${added}`);
       } else {
         toast("Все выбранные регионы уже в списке");
-      }
-    });
-
-    $("#btn-region-add-custom")?.addEventListener("click", () => {
-      const inp = $("#region-custom-input");
-      if (addRegion(inp?.value)) inp.value = "";
-    });
-
-    $("#region-custom-input")?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        $("#btn-region-add-custom")?.click();
       }
     });
 

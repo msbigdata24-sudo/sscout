@@ -420,6 +420,7 @@ def index_page():
     html = index.read_text(encoding="utf-8")
     v = BUILD_VERSION
     html = html.replace("/static/js/storage.js", f"/static/js/storage.js?v={v}")
+    html = html.replace("/static/js/regions-ru.js", f"/static/js/regions-ru.js?v={v}")
     html = html.replace("/static/js/app.js", f"/static/js/app.js?v={v}")
     return Response(
         content=html,
