@@ -235,8 +235,11 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
             if not analysis.get("ok"):
                 raise RuntimeError(analysis.get("error") or "Не удалось разобрать сайт клиента")
             niche = brief.get("niche") or analysis.get("title") or ""
-            _set_step(pipeline, "analyze", "done", f"Сайт: {analysis.get('site_url')} · {niche[:80]}")
-            _log(pipeline, f"Ниша: {niche[:100]}", status="success")
+            _set_step(
+                pipeline, "analyze", "done",
+                f"Сайт: {analysis.get('site_url')} · {niche.strip()}",
+            )
+            _log(pipeline, f"Ниша: {niche.strip()}", status="success")
             await _persist(run_id, pipeline)
 
         # ── 2 serp ──
