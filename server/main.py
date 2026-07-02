@@ -22,6 +22,7 @@ from server.config import (
     YANDEX_XML_USER,
 )
 from server.phones import normalize_digits
+from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
 from server.pipeline import (
