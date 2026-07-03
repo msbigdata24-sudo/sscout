@@ -239,7 +239,13 @@ def pick_phones_list(
     filtered = filter_phones_list(phones, phone_filter)
     if not filtered and phone_filter == "mobile":
         filtered = filter_phones_list(phones, "business")
-    return filtered
+    seen: set[str] = set()
+    unique: list[str] = []
+    for p in filtered:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
 
 
 def format_phone_display(digits: str) -> str:

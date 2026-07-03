@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-03-timeout-fix"
+BUILD_VERSION = "2026-07-03-export-all-phones"
 
 XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
 XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()
