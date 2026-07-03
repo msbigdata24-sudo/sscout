@@ -271,6 +271,8 @@
       ? "Сервер: офлайн · запустите run.ps1"
       : "Сервер: офлайн · подождите 1–2 мин или обновите деплой на Render";
   }
+
+  const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
   function toast(msg) {
@@ -651,7 +653,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-03-render-redeploy";
+      const EXPECTED_VERSION = "2026-07-03-regions-fix";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
