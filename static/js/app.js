@@ -261,7 +261,16 @@
     btn.textContent = resumeId ? "Продолжить сбор" : "Запустить сбор";
   }
 
-  const $ = (sel) => document.querySelector(sel);
+  function isLocalDev() {
+    const h = window.location.hostname;
+    return h === "127.0.0.1" || h === "localhost" || window.location.protocol === "file:";
+  }
+
+  function serverOfflineHint() {
+    return isLocalDev()
+      ? "Сервер: офлайн · запустите run.ps1"
+      : "Сервер: офлайн · подождите 1–2 мин или обновите деплой на Render";
+  }
   const $$ = (sel) => document.querySelectorAll(sel);
 
   function toast(msg) {
@@ -642,7 +651,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-02-health-fix";
+      const EXPECTED_VERSION = "2026-07-03-render-redeploy";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
@@ -656,7 +665,7 @@
     } catch (_) {
       apiOnline = false;
       const el = $("#api-status");
-      el.textContent = "Сервер: офлайн · run.ps1";
+      el.textContent = serverOfflineHint();
       el.style.color = "var(--danger)";
       return null;
     }
@@ -925,7 +934,7 @@
       resetRunUi("Сервер офлайн");
       startingRun = false;
       setRunButtons(false);
-      return toast("Запустите run.ps1");
+      return toast(isLocalDev() ? "Запустите run.ps1" : "Сервер на Render не отвечает — подождите или обновите страницу (Ctrl+F5)");
     }
     if (!isSearchConfigured(health, brief)) {
       resetRunUi("Нужен ключ XMLRiver");
