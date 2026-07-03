@@ -45,7 +45,12 @@ def _empty_pipeline() -> dict[str, Any]:
 
 def _error_message(exc: BaseException) -> str:
     msg = str(exc).strip()
-    return msg or exc.__class__.__name__
+    name = exc.__class__.__name__
+    if name in ("ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout"):
+        return "Таймаут сети — сайт или XMLRiver не ответил вовремя. Нажмите «Продолжить сбор»."
+    if "ReadTimeout" in msg or "ConnectTimeout" in msg:
+        return "Таймаут сети — сайт или XMLRiver не ответил вовремя. Нажмите «Продолжить сбор»."
+    return msg or name
 
 
 def _parse_queries(brief: dict[str, Any]) -> list[str]:
@@ -202,6 +207,14 @@ async def _crawl_candidates(
             except asyncio.TimeoutError:
                 cr = {"ok": False, "error": "timeout", "phones_meta": [], "title": domain}
                 await site_log(f"{domain} — таймаут {SITE_CRAWL_TIMEOUT} сек", domain, "error")
+            except Exception as exc:
+                cr = {
+                    "ok": False,
+                    "error": _error_message(exc),
+                    "phones_meta": [],
+                    "title": domain,
+                }
+                await site_log(f"{domain} — {_error_message(exc)}", domain, "error")
 
             row = _build_row(cand, cr, phone_filter=phone_filter, regions=regions)
             phones_meta = cr.get("phones_meta") or []

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-03-regions-fix"
+BUILD_VERSION = "2026-07-03-timeout-fix"
 
 XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
 XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()
@@ -18,10 +18,11 @@ YANDEX_XML_KEY = os.getenv("YANDEX_XML_KEY", "").strip()
 SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
 SCRAPINGFISH_API_KEY = os.getenv("SCRAPINGFISH_API_KEY", "").strip()
 PORT = int(os.getenv("PORT") or os.getenv("SIGNAL_SCOUT_PORT") or "8765")
-CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "8"))))
-HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "15")))
-SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "30")))
-SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "75")))
+CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "5"))))
+HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "20")))
+SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "45")))
+SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "90")))
+SERP_TIMEOUT = max(30, int(os.getenv("SERP_TIMEOUT", "90")))
 FETCH_RETRIES = max(1, min(5, int(os.getenv("FETCH_RETRIES", "3"))))
 SERP_PAGES = max(1, min(4, int(os.getenv("SERP_PAGES", "2"))))
 DEFAULT_MAX_SITES = 50

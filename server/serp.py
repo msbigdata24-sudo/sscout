@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
-from server.config import SERP_PAGES, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
+from server.config import SERP_PAGES, SERP_TIMEOUT, XMLRIVER_KEY, XMLRIVER_USER, YANDEX_XML_KEY, YANDEX_XML_USER
 from server.phones import domain_from_url
 
 YANDEX_XML_URL = "https://yandex.ru/search/xml"
@@ -120,7 +120,14 @@ async def _xmlriver_request(
 
     last_err: SerpError | None = None
     for attempt in range(SERP_MAX_RETRIES):
-        resp = await client.get(base_url, params=params)
+        try:
+            resp = await client.get(base_url, params=params)
+        except httpx.TimeoutException as exc:
+            last_err = SerpError(f"XMLRiver: таймаут ({exc.__class__.__name__})")
+            if attempt + 1 < SERP_MAX_RETRIES:
+                await asyncio.sleep(SERP_RETRY_DELAY_SEC)
+                continue
+            raise last_err from exc
         if resp.status_code >= 400:
             raise SerpError(f"XMLRiver HTTP {resp.status_code}")
         try:
@@ -172,7 +179,7 @@ async def search_via_xmlriver(
         raise SerpError("Укажите ID и API-ключ XMLRiver в брифе или в Render (XMLRIVER_USER / XMLRIVER_KEY)")
 
     hits: list[dict] = []
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=float(SERP_TIMEOUT)) as client:
         for page in range(pages):
             y_extra: dict = {"lang": "ru", "domain": "ru", "device": "desktop"}
             if lr:
@@ -288,6 +295,9 @@ async def collect_serp(
             )
         except SerpError as exc:
             errors.append(f"{query}: {str(exc).strip() or exc.__class__.__name__}")
+            continue
+        except httpx.TimeoutException as exc:
+            errors.append(f"{query}: таймаут XMLRiver ({exc.__class__.__name__})")
             continue
         stats["raw_hits"] += len(batch)
         all_hits.extend(batch)
