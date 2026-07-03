@@ -61,7 +61,7 @@ def rebuild_rows(parsed: list[list[str]]) -> tuple[list[str], list[list[str]]]:
         max_phones = max(max_phones, len(phones))
         rebuilt.append([site, name, region, phones, source, status])
 
-    # Без искусственного потолка — столько колонок, сколько нужно по данным.
+    max_phones = min(max_phones, 6)
     out_header = (
         ["Сайт", "Компания", "Регион"]
         + [f"Телефон {i}" for i in range(1, max_phones + 1)]

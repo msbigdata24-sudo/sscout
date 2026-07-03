@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from server.config import (
     BUILD_VERSION,
+    MAX_EXPORT_PHONES,
     PILOT_SEED_DOMAINS,
     PORT,
     ROOT,
@@ -326,12 +327,13 @@ def _phones_for_export(row: dict) -> list[str]:
         nums = [str(p) for p in raw if p]
     else:
         nums = [str(row.get(k)) for k in ("p1", "p2") if row.get(k)]
-    return [normalize_digits(p) for p in nums if normalize_digits(p)]
+    cleaned = [normalize_digits(p) for p in nums if normalize_digits(p)]
+    return cleaned[:MAX_EXPORT_PHONES]
 
 
 def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
     max_phones = max((len(_phones_for_export(r)) for r in rows), default=0)
-    max_phones = max(1, max_phones)
+    max_phones = max(1, min(MAX_EXPORT_PHONES, max_phones))
     header = (
         ["Сайт", "Компания", "Регион"]
         + [f"Телефон {i}" for i in range(1, max_phones + 1)]

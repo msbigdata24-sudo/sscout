@@ -653,7 +653,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-03-export-all-phones";
+      const EXPECTED_VERSION = "2026-07-03-export-6-phones";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
