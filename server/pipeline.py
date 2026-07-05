@@ -21,10 +21,13 @@ from server.filters import (
     is_catalog_domain,
     parse_domain_list,
     parse_regions,
+    region_matches,
     serp_hit_relevant,
+    serp_meta_region_text,
     try_catalog_page,
 )
 from server.phones import domain_from_url, pick_phones_enriched, pick_phones_list, validate_phone
+from server.regions_ru import detect_region_in_text
 from server.serp import SerpError, collect_serp, group_hits_by_domain, parse_xmlriver_credentials
 
 PIPELINE_STEPS = ["analyze", "serp", "filter", "crawl", "catalog", "dedup"]
@@ -124,14 +127,21 @@ def _crawled_domains(rows: list[dict]) -> set[str]:
     return {str(r.get("site", "")).lower() for r in rows if r.get("site")}
 
 
-def _build_row(cand: dict, cr: dict, *, phone_filter: str, regions: list[str]) -> dict:
+def _build_row(
+    cand: dict,
+    cr: dict,
+    *,
+    phone_filter: str,
+    regions: list[str],
+    region_mode: str = "include",
+) -> dict:
     domain = cand["domain"]
     phones_meta = cr.get("phones_meta") or []
     phone_list = pick_phones_list(phones_meta, phone_filter)
     p1, p2, t1, t2 = pick_phones_enriched(phones_meta, phone_filter)
     name = cr.get("title") or cand.get("title") or domain
-    offer = _offer_line(cand, regions)
-    region_tag = _detect_region(offer, regions)
+    offer = _offer_line(cand, regions, region_mode=region_mode)
+    region_tag = _detect_region(cand)
     crawl_st = "success" if cr.get("ok") else "error"
     return {
         "site": domain,
@@ -159,6 +169,7 @@ async def _crawl_candidates(
     *,
     phone_filter: str,
     regions: list[str],
+    region_mode: str = "include",
     crawl_depth: int,
     delay_ms: int,
     use_proxy: bool,
@@ -216,7 +227,13 @@ async def _crawl_candidates(
                 }
                 await site_log(f"{domain} — {_error_message(exc)}", domain, "error")
 
-            row = _build_row(cand, cr, phone_filter=phone_filter, regions=regions)
+            row = _build_row(
+                cand,
+                cr,
+                phone_filter=phone_filter,
+                regions=regions,
+                region_mode=region_mode,
+            )
             phones_meta = cr.get("phones_meta") or []
             crawl_st = row["crawl_status"]
             await site_log(
@@ -255,6 +272,10 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
         client_domain = domain_from_url(brief.get("clientSite", ""))
         exclude = parse_domain_list(brief.get("excludeDomains", ""))
         regions = parse_regions(brief.get("regions", ""))
+        region_mode = brief.get("regionMode", "include") or "include"
+        if region_mode not in ("include", "exclude"):
+            region_mode = "include"
+        serp_regions_text = "" if region_mode == "exclude" else (brief.get("regions", "") or "")
         phone_filter = brief.get("phoneFilter", "business")
         check_alive = brief.get("checkAlive", True)
         sources = set(brief.get("sources") or ["serp", "site", "catalog"])
@@ -265,6 +286,14 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
         )
         if not brief.get("quickCrawl") and not had_queries_in_brief and queries:
             _log(pipeline, f"Запросы в брифе пустые — подставлены пилотные ({len(queries)} шт.)", status="info")
+        if regions and region_mode == "exclude":
+            _log(
+                pipeline,
+                f"Регионы: все субъекты РФ, кроме {len(regions)} перечисленных в брифе",
+                status="info",
+            )
+        elif regions and region_mode == "include":
+            _log(pipeline, f"Регионы: только {len(regions)} перечисленных в брифе", status="info")
         max_sites = max(10, min(200, int(brief.get("maxSites") or DEFAULT_MAX_SITES)))
         crawl_depth = max(1, min(5, int(brief.get("crawlDepth") or 2)))
         delay_ms = max(0, min(5000, int(brief.get("requestDelayMs") or 500)))
@@ -339,7 +368,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                     pages=SERP_PAGES,
                     xmlriver_user=xr_user,
                     xmlriver_key=xr_key,
-                    regions_text=brief.get("regions", ""),
+                    regions_text=serp_regions_text,
                     max_results=max(50, max_sites * 4),
                 )
                 for hit in serp_hits:
@@ -413,7 +442,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                         pages=SERP_PAGES,
                         xmlriver_user=xr_user,
                         xmlriver_key=xr_key,
-                        regions_text=brief.get("regions", ""),
+                        regions_text=serp_regions_text,
                         max_results=max(50, max_sites * 4),
                     )
                     for hit in serp_hits:
@@ -425,10 +454,16 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                 candidates: list[dict] = []
                 excluded_count = 0
                 irrelevant_count = 0
+                region_skipped = 0
                 for domain, meta in grouped.items():
                     status = classify_domain(domain, exclude=exclude, client_domain=client_domain)
                     if status in ("исключён", "агрегатор"):
                         excluded_count += 1
+                        continue
+                    if regions and not region_matches(
+                        serp_meta_region_text(meta), regions, region_mode
+                    ):
+                        region_skipped += 1
                         continue
                     if not serp_hit_relevant(meta, queries, brief.get("niche", "")):
                         irrelevant_count += 1
@@ -475,12 +510,14 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                 _set_step(
                     pipeline, "filter", "done",
                     f"К обходу: {len(alive_candidates)} · "
-                    f"отсечено: агрег. {excluded_count}, не по теме {irrelevant_count}",
+                    f"отсечено: агрег. {excluded_count}, не по теме {irrelevant_count}, "
+                    f"по региону {region_skipped}",
                 )
                 _log(
                     pipeline,
                     f"После фильтра: {len(alive_candidates)} сайтов к обходу "
-                    f"(агрегаторов {excluded_count}, не по теме {irrelevant_count})",
+                    f"(агрегаторов {excluded_count}, не по теме {irrelevant_count}, "
+                    f"по региону {region_skipped})",
                     status="success",
                 )
                 await _persist(run_id, pipeline)
@@ -502,6 +539,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                     rows,
                     phone_filter=phone_filter,
                     regions=regions,
+                    region_mode=region_mode,
                     crawl_depth=crawl_depth,
                     delay_ms=delay_ms,
                     use_proxy=use_proxy,
@@ -647,20 +685,25 @@ def _can_resume_run(run: dict) -> bool:
     return len(pipeline.get("logs") or []) >= 2
 
 
-def _detect_region(offer: str, regions: list[str]) -> str:
-    low = (offer or "").lower()
-    for r in regions:
-        if r.lower() in low:
-            return r
-    return regions[0] if regions else ""
+def _detect_region(cand: dict) -> str:
+    queries = cand.get("queries") or []
+    if isinstance(queries, set):
+        queries = sorted(queries)
+    text = " ".join(
+        str(cand.get(k) or "")
+        for k in ("title", "snippet")
+    ) + " " + " ".join(str(q) for q in queries)
+    return detect_region_in_text(text)
 
 
-def _offer_line(cand: dict, regions: list[str]) -> str:
+def _offer_line(cand: dict, regions: list[str], *, region_mode: str = "include") -> str:
     snippet = (cand.get("snippet") or "")[:160]
-    reg = ", ".join(regions[:2]) if regions else ""
     engines = "/".join(cand.get("engines") or [])
     base = snippet or f"Выдача {engines}"
-    return f"{base}; {reg}"[:200] if reg else base[:200]
+    if region_mode == "include" and regions:
+        reg = ", ".join(regions[:2])
+        return f"{base}; {reg}"[:200]
+    return base[:200]
 
 
 def _dedupe_rows(rows: list[dict]) -> list[dict]:

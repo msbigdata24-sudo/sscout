@@ -98,10 +98,57 @@ def region_matches(text: str, regions: list[str], mode: str) -> bool:
     if not regions:
         return True
     hay = (text or "").lower()
-    hits = sum(1 for r in regions if r in hay)
+    hits = sum(1 for r in regions if _region_in_text(hay, r))
     if mode == "include":
         return hits > 0
     return hits == 0
+
+
+def _region_in_text(hay: str, region: str) -> bool:
+    r = (region or "").lower().strip()
+    if not r:
+        return False
+    if r in hay:
+        return True
+    for alias in _REGION_ALIASES.get(r, ()):
+        if alias in hay:
+            return True
+    for suffix in (
+        "ская область",
+        "ский край",
+        " автономная область",
+        " автономный округ",
+        "ская республика",
+        " народная республика",
+    ):
+        if r.endswith(suffix):
+            stem = r[: -len(suffix)].strip()
+            if len(stem) >= 4 and stem in hay:
+                return True
+    if r == "москва" and "москв" in hay:
+        return True
+    if r == "санкт-петербург" and ("петербург" in hay or "спб" in hay):
+        return True
+    return False
+
+
+_REGION_ALIASES: dict[str, tuple[str, ...]] = {
+    "еврейская автономная область": ("еао", "еврейск", "биробиджан"),
+    "ненецкий автономный округ": ("ненец", "нао"),
+    "ханты-мансийский автономный округ — югра": ("югра", "хмао", "ханты", "сургут"),
+    "чукотский автономный округ": ("чукот", "анадыр"),
+    "ямало-ненецкий автономный округ": ("янао", "ямал", "салехард"),
+}
+
+
+def serp_meta_region_text(meta: dict) -> str:
+    queries = meta.get("queries") or []
+    if isinstance(queries, set):
+        queries = sorted(queries)
+    return " ".join(
+        str(meta.get(k) or "")
+        for k in ("title", "snippet")
+    ) + " " + " ".join(str(q) for q in queries)
 
 
 _PHONE_HINT_RE = re.compile(
