@@ -360,6 +360,26 @@ def _export_rows(run_id: str) -> list[dict]:
     return run.get("results") or []
 
 
+def _safe_export_basename(run_id: str) -> str:
+    run = db.get_run(run_id)
+    name = ""
+    if run:
+        brief = run.get("brief") or {}
+        name = (brief.get("clientName") or "").strip()
+    if not name:
+        return f"signal-scout-{run_id[:8]}"
+    cleaned = re.sub(r'[<>:"/\\|?*\n\r\t]', "", name)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().strip(".")
+    return cleaned[:80] if cleaned else f"signal-scout-{run_id[:8]}"
+
+
+def _content_disposition(filename: str) -> str:
+    ascii_name = re.sub(r"[^\w\-]+", "_", filename, flags=re.ASCII).strip("_") or "export"
+    from urllib.parse import quote
+
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
 @app.get("/api/export/{run_id}.csv")
 def export_csv(run_id: str):
     import csv
@@ -372,38 +392,45 @@ def export_csv(run_id: str):
     w = csv.writer(buf, delimiter=";")
     w.writerow(header)
     w.writerows(data)
+    filename = f"{_safe_export_basename(run_id)}.csv"
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="signal-scout-{run_id}.csv"'},
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
 
 
-@app.get("/api/export/{run_id}.xls")
-def export_xls(run_id: str):
-    import xml.sax.saxutils as xml_esc
+@app.get("/api/export/{run_id}.xlsx")
+def export_xlsx(run_id: str):
+    import io
+
+    from openpyxl import Workbook
 
     rows = _export_rows(run_id)
-    esc = xml_esc.escape
     header, data = _export_table(rows)
     phone_col_start = 3
-    phone_col_end = phone_col_start + sum(1 for h in header if h.startswith("Телефон"))
-    text_cols = set(range(phone_col_start, phone_col_end)) | {len(header) - 1}
-    xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>'
-    xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
-    xml += '<Styles><Style ss:ID="Text"><NumberFormat ss:Format="@"/></Style></Styles>'
-    xml += "<Worksheet ss:Name=\"Сигнал-Скаут\"><Table>"
-    for row in [header] + data:
-        xml += "<Row>"
-        for i, cell in enumerate(row):
-            st = ' ss:StyleID="Text"' if i in text_cols else ""
-            xml += f"<Cell{st}><Data ss:Type=\"String\">{esc(str(cell))}</Data></Cell>"
-        xml += "</Row>"
-    xml += "</Table></Worksheet></Workbook>"
+    phone_col_count = sum(1 for h in header if h.startswith("Телефон"))
+    text_col_indices = set(range(phone_col_start, phone_col_start + phone_col_count))
+    text_col_indices.add(len(header) - 1)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Сигнал-Скаут"
+    ws.append(header)
+    for row in data:
+        ws.append(row)
+    for row_idx in range(2, ws.max_row + 1):
+        for col_idx in text_col_indices:
+            cell = ws.cell(row=row_idx, column=col_idx + 1)
+            cell.number_format = "@"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    filename = f"{_safe_export_basename(run_id)}.xlsx"
     return Response(
-        content=xml,
-        media_type="application/vnd.ms-excel; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="signal-scout-{run_id}.xls"'},
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
 
 

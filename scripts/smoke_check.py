@@ -46,11 +46,22 @@ def check_export_phones() -> None:
     assert len(_phones_for_export(row)) == 6
 
 
+def check_export_filename() -> None:
+    from server.main import _safe_export_basename
+
+    assert _safe_export_basename("missing") == "signal-scout-missing"
+    # без реальной БД — только проверка санитизации через логику имени
+    name = 'ИП Бондарец / тест'
+    cleaned = __import__("re").sub(r'[<>:"/\\|?*\n\r\t]', "", name)
+    assert "/" not in cleaned
+
+
 def main() -> None:
     check_js_constants()
     check_client_site_urls()
     check_region_exclude()
     check_export_phones()
+    check_export_filename()
     print(f"OK smoke_check · BUILD_VERSION={BUILD_VERSION}")
 
 

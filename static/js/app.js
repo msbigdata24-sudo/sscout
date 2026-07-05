@@ -54,7 +54,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-05-audit-fix";
+  const EXPECTED_BUILD_VERSION = "2026-07-05-export-xlsx";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -1192,7 +1192,7 @@
   }
 
   function exportXls() {
-    if (currentRunId && apiOnline) window.open(`${API_BASE}/api/export/${currentRunId}.xls`, "_blank");
+    if (currentRunId && apiOnline) window.open(`${API_BASE}/api/export/${currentRunId}.xlsx`, "_blank");
     else toast("Нет активного прогона");
   }
 
@@ -1275,7 +1275,7 @@
       brief = readForm();
       window.SSStorage.saveBrief(brief);
       updateRunUI();
-      toast("Пилот загружен");
+      toast("Пример брифа загружен");
     });
 
     $("#client-site").addEventListener("blur", () => {
