@@ -54,7 +54,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-05-export-xlsx";
+  const EXPECTED_BUILD_VERSION = "2026-07-05-brief-suggest";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -1175,15 +1175,44 @@
       <p><strong>Общие:</strong> ${data.common.length}</p>`;
   }
 
-  async function previewNiche() {
-    const url = $("#client-site").value.trim();
-    if (!url || !apiOnline) return;
+  let lastSuggestedSiteUrl = "";
+
+  async function suggestBriefFromSite(force) {
+    const url = normalizeClientSite($("#client-site")?.value || "");
+    if (!url || !isValidClientSite(url)) return;
+    if (!force && url === lastSuggestedSiteUrl) return;
+    if (!apiOnline) {
+      toast("Сервер офлайн — автозаполнение недоступно");
+      return;
+    }
+    const hint = $("#niche-hint");
+    if (hint) hint.textContent = "Анализируем сайт…";
     try {
-      const res = await fetch(`${API_BASE}/api/preview?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      if (data.niche_hint && !$("#niche").value) $("#niche").value = data.niche_hint;
-      $("#niche-hint").textContent = data.title ? `Подсказка: ${data.title}` : "";
-    } catch (_) {}
+      const res = await fetch(`${API_BASE}/api/brief/suggest?url=${encodeURIComponent(url)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (hint) hint.textContent = typeof data.detail === "string" ? data.detail : "Не удалось разобрать сайт";
+        return;
+      }
+      lastSuggestedSiteUrl = url;
+      if (data.clientName && (!$("#client-name").value.trim() || force)) {
+        $("#client-name").value = data.clientName;
+      }
+      if (data.niche) $("#niche").value = data.niche;
+      if (data.queries) $("#queries").value = data.queries;
+      if (data.excludeDomains) $("#exclude-domains").value = data.excludeDomains;
+      brief = readForm();
+      window.SSStorage.saveBrief(brief);
+      updateRunUI();
+      if (hint) {
+        hint.textContent = data.title
+          ? `Заполнено по сайту · ${data.title}`
+          : "Ниша, запросы и исключения подставлены · регионы укажите вручную";
+      }
+      toast("Бриф заполнен по сайту · регионы — вручную");
+    } catch (_) {
+      if (hint) hint.textContent = "Ошибка связи с сервером";
+    }
   }
 
   function exportCsv() {
@@ -1279,8 +1308,12 @@
     });
 
     $("#client-site").addEventListener("blur", () => {
-      previewNiche();
+      suggestBriefFromSite(false);
       refreshStartButtonLabel();
+    });
+    $("#btn-suggest-brief")?.addEventListener("click", () => {
+      lastSuggestedSiteUrl = "";
+      suggestBriefFromSite(true);
     });
     $("#btn-start").addEventListener("click", runPipeline);
     $("#btn-resume")?.addEventListener("click", () => {

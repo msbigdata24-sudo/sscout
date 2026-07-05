@@ -754,7 +754,11 @@
               </div>
               <div class="field">
                 <label for="client-site">Сайт клиента</label>
-                <input type="url" id="client-site" name="clientSite" placeholder="https://..." required>
+                <div class="region-add-row">
+                  <input type="url" id="client-site" name="clientSite" placeholder="https://..." required style="flex:1">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-suggest-brief">Заполнить по сайту</button>
+                </div>
+                <p class="hint">После ввода URL подставим нишу, запросы и исключения. Регионы — только вручную.</p>
               </div>
             </div>
             <div class="field">

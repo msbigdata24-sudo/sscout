@@ -24,6 +24,7 @@ from server.config import (
 )
 from server.phones import normalize_digits
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
+from server.brief_suggest import suggest_brief_from_analysis
 from server.crawler import analyze_client_site, normalize_url
 from server.db import db
 from server.pipeline import (
@@ -98,7 +99,7 @@ def health():
         "ok": True,
         "version": BUILD_VERSION,
         "branch": "main",
-        "features": ["quick-crawl", "pilot-queries", "resume"],
+        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest"],
         "search_provider": "xmlriver",
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
@@ -141,6 +142,23 @@ async def preview_site(url: str = Query(..., min_length=4)):
         "niche_hint": (data.get("title") or "")[:200],
         "sample": (data.get("text_sample") or "")[:500],
     }
+
+
+@app.get("/api/brief/suggest")
+async def suggest_brief(url: str = Query(..., min_length=4)):
+    """Разбор сайта: ниша, запросы для Яндекса, исключения. Регионы — вручную."""
+    normalized = normalize_client_site(url)
+    if not normalized:
+        raise HTTPException(400, "Укажите корректный URL сайта")
+    data = await analyze_client_site(normalized, depth=1, delay_ms=0)
+    if not data.get("ok"):
+        raise HTTPException(400, data.get("error") or "Не удалось открыть сайт")
+    payload = suggest_brief_from_analysis(
+        site_url=data.get("site_url") or normalized,
+        title=data.get("title") or "",
+        text_sample=data.get("text_sample") or "",
+    )
+    return {"ok": True, **payload}
 
 
 @app.post("/api/run")
@@ -373,6 +391,14 @@ def _safe_export_basename(run_id: str) -> str:
     return cleaned[:80] if cleaned else f"signal-scout-{run_id[:8]}"
 
 
+def _export_filename(run_id: str, ext: str) -> str:
+    from datetime import datetime, timezone, timedelta
+
+    msk = timezone(timedelta(hours=3))
+    date_str = datetime.now(msk).strftime("%d-%m-%Y")
+    return f"{_safe_export_basename(run_id)} {date_str}.{ext}"
+
+
 def _content_disposition(filename: str) -> str:
     ascii_name = re.sub(r"[^\w\-]+", "_", filename, flags=re.ASCII).strip("_") or "export"
     from urllib.parse import quote
@@ -392,7 +418,7 @@ def export_csv(run_id: str):
     w = csv.writer(buf, delimiter=";")
     w.writerow(header)
     w.writerows(data)
-    filename = f"{_safe_export_basename(run_id)}.csv"
+    filename = _export_filename(run_id, "csv")
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -426,7 +452,7 @@ def export_xlsx(run_id: str):
 
     buf = io.BytesIO()
     wb.save(buf)
-    filename = f"{_safe_export_basename(run_id)}.xlsx"
+    filename = _export_filename(run_id, "xlsx")
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

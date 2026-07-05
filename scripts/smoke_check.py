@@ -20,6 +20,8 @@ def check_js_constants() -> None:
     m = re.search(r'const EXPECTED_BUILD_VERSION = "([^"]+)"', app_js)
     assert m, "EXPECTED_BUILD_VERSION missing"
     assert m.group(1) == BUILD_VERSION, f"app.js version {m.group(1)} != config {BUILD_VERSION}"
+    assert "suggestBriefFromSite" in app_js
+    assert "/api/brief/suggest" in app_js
 
 
 def check_client_site_urls() -> None:
@@ -47,13 +49,31 @@ def check_export_phones() -> None:
 
 
 def check_export_filename() -> None:
-    from server.main import _safe_export_basename
+    from server.main import _export_filename, _safe_export_basename
 
     assert _safe_export_basename("missing") == "signal-scout-missing"
-    # без реальной БД — только проверка санитизации через логику имени
-    name = 'ИП Бондарец / тест'
-    cleaned = __import__("re").sub(r'[<>:"/\\|?*\n\r\t]', "", name)
-    assert "/" not in cleaned
+    name = _export_filename("abc12345", "xlsx")
+    assert name.endswith(".xlsx")
+    date_part = name.rsplit(" ", 1)[1].replace(".xlsx", "")
+    assert re.fullmatch(r"\d{2}-\d{2}-\d{4}", date_part)
+
+
+def check_brief_suggest_opalubka() -> None:
+    from server.brief_suggest import suggest_brief_from_analysis
+
+    sample = (
+        "Аренда и продажа опалубки крупнощитовая мелкощитовая перекрытия колонны "
+        "Щелково Москва © ООО «Опалубка-Домстрой»"
+    )
+    r = suggest_brief_from_analysis(
+        site_url="https://www.opalubka-domstroy.ru/",
+        title="Продажа строительной опалубки в Москве",
+        text_sample=sample,
+    )
+    assert "опалуб" in r["niche"].lower()
+    assert "аренда опалубки" in r["queries"]
+    assert "opalubka-domstroy.ru" in r["excludeDomains"]
+    assert "avito.ru" in r["excludeDomains"]
 
 
 def main() -> None:
@@ -62,6 +82,7 @@ def main() -> None:
     check_region_exclude()
     check_export_phones()
     check_export_filename()
+    check_brief_suggest_opalubka()
     print(f"OK smoke_check · BUILD_VERSION={BUILD_VERSION}")
 
 
