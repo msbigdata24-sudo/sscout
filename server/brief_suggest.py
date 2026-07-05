@@ -1,10 +1,8 @@
-"""Подбор ниши, запросов и исключений по сайту клиента (без ИИ — по тексту страницы)."""
+"""Универсальный подбор брифа по главной странице сайта (без профилей под отдельные ниши)."""
 from __future__ import annotations
 
 import re
 from urllib.parse import urlparse
-
-from server.config import AGGREGATOR_DOMAINS
 
 _STANDARD_EXCLUDE = (
     "avito.ru",
@@ -21,6 +19,7 @@ _STANDARD_EXCLUDE = (
 _GEO_CITIES = (
     ("москва", "Москва"),
     ("московск", "Москва"),
+    ("москве", "Москва"),
     ("щелково", "Щелково"),
     ("ярославл", "Ярославль"),
     ("владимир", "Владимир"),
@@ -32,104 +31,42 @@ _GEO_CITIES = (
     ("новосибирск", "Новосибирск"),
 )
 
-# primary — хотя бы один обязателен; triggers — дополнительные маркеры (+баллы)
-_NICHE_PROFILES: list[dict] = [
-    {
-        "id": "opalubka",
-        "primary": ("опалуб",),
-        "triggers": ("крупнощит", "мелкощит", "перекрыт", "щитовая опалуб"),
-        "niche": "Аренда и продажа строительной опалубки (крупнощитовая, мелкощитовая, перекрытия, колонны).",
-        "queries": [
-            "аренда опалубки",
-            "аренда крупнощитовой опалубки",
-            "аренда мелкощитовой опалубки",
-            "аренда опалубки перекрытий",
-            "продажа опалубки",
-            "опалубка для колонн",
-            "аренда опалубки для фундамента",
-            "аренда строительных лесов",
-        ],
-        "if_text": {
-            "продаж": "продажа опалубки",
-            "крупнощит": "аренда крупнощитовой опалубки",
-            "мелкощит": "аренда мелкощитовой опалубки",
-            "перекрыт": "аренда опалубки перекрытий",
-            "cup-lock": "аренда опалубки Cup-Lock",
-            "колонн": "опалубка для колонн",
-            "фундамент": "аренда опалубки для фундамента",
-            "лесов": "аренда строительных лесов",
-            "щелково": "аренда опалубки Щелково",
-        },
-        "exclude_extra": ("opalubka.ru", "peri.ru", "snab-str.ru", "opalubka-market.ru"),
-    },
-    {
-        "id": "karkas",
-        "primary": ("каркас", "frame club", "frameclub"),
-        "triggers": ("каркасн", "sip ", "сип ", "модульн дом", "завод"),
-        "niche": "Строительство каркасных домов под ключ: заводское производство, типовые проекты, сборка на участке.",
-        "queries": [
-            "каркасные дома под ключ",
-            "строительство каркасного дома",
-            "каркасный дом цена",
-            "завод каркасных домов",
-            "каркасный дом под ключ",
-            "дома из сип панелей",
-            "строительство каркасных домов",
-            "каркасный дом проекты",
-        ],
-        "if_text": {
-            "ипотек": "каркасный дом в ипотеку",
-            "модульн": "модульные дома под ключ",
-            "типов": "типовые проекты каркасных домов",
-            "производств": "завод каркасных домов",
-        },
-        "exclude_extra": (),
-    },
-    {
-        "id": "uglevolokno",
-        "primary": ("углеволок", "wallwrap", "wallgraf", "внешнее армирован", "армирование жб", "армирование железобетон"),
-        "triggers": ("композитн армир", "углеродн лент", "усиление жб", "усиление железобетон"),
-        "niche": "Усиление железобетонных конструкций углеволокном (внешнее армирование), материалы, проектирование и монтаж.",
-        "queries": [
-            "усиление конструкций углеволокном",
-            "усиление железобетона углеволокном",
-            "внешнее армирование железобетонных конструкций",
-            "усиление плит перекрытия углеволокном",
-            "усиление балок углеволокном",
-            "усиление колонн углеволокном",
-            "углеродные ленты для усиления бетона",
-            "монтаж углеволокна",
-            "проектирование усиления углеволокном",
-            "ремонт трещин в бетоне инъекция",
-        ],
-        "if_text": {
-            "мост": "усиление мостов углеволокном",
-            "обследован": "обследование несущих конструкций",
-        },
-        "exclude_extra": (),
-    },
-    {
-        "id": "angary",
-        "primary": ("ангар", "быстровозводим"),
-        "triggers": ("металлоконструкц", "сэндвич", "склад под ключ"),
-        "niche": "Проектирование и строительство ангаров и быстровозводимых зданий под ключ.",
-        "queries": [
-            "строительство ангаров под ключ",
-            "металлические ангары",
-            "ангары из сэндвич панелей",
-            "быстровозводимые здания",
-            "строительство складов под ключ",
-            "изготовление металлоконструкций",
-            "монтаж металлоконструкций",
-            "проектирование ангаров",
-        ],
-        "if_text": {
-            "склад": "строительство складов под ключ",
-            "ферм": "металлические фермы",
-        },
-        "exclude_extra": (),
-    },
-]
+# UI-мусор в заголовках и меню
+_SKIP_PHRASE = re.compile(
+    r"^(главная|каталог|контакты|о компании|о нас|услуги|портфолио|производство|"
+    r"новости|статьи|акции|проекты|скачать|отзывы|доставка|оплата|ещё|меню|"
+    r"подробнее|узнать стоимость|оставить заявку|заказать|получить консультацию|"
+    r"отправить|согласен|принимаю|загрузка|все права|copyright|"
+    r"\d{1,3}\s*м²|\d+$|0\d$)$",
+    re.IGNORECASE,
+)
+
+_PROMO_RE = re.compile(
+    r"акци[!]|скидк|%|специальн.*цен|оформлении.*месяц|б/у\s|рассрочк",
+    re.IGNORECASE,
+)
+
+_STOP_WORDS = frozenset({
+    "компания", "услуги", "подробнее", "контакты", "главная", "каталог", "новости",
+    "статьи", "политика", "обработку", "персональных", "данных", "согласен",
+    "принимаю", "отправить", "заявку", "заказать", "звонок", "смотреть", "разделы",
+    "связаться", "вопросы", "загрузка", "home", "menu", "blog", "read", "more",
+})
+
+_INTENT_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("аренда", ("аренда {}", "аренда {} цена")),
+    ("продаж", ("продажа {}", "купить {}")),
+    ("купить", ("купить {}", "цена {}")),
+    ("строительств", ("строительство {}", "{} под ключ")),
+    ("монтаж", ("монтаж {}", "услуги {}")),
+    ("производств", ("завод {}", "производство {}")),
+    ("изготовлен", ("изготовление {}", "заказать {}")),
+    ("усилени", ("усиление {}", "услуги {}")),
+    ("ремонт", ("ремонт {}", "{} цена")),
+    ("проектирован", ("проектирование {}", "проект {}")),
+    ("обследован", ("обследование {}", "диагностика {}")),
+    ("доставк", ("доставка {}", "{} с доставкой")),
+)
 
 _FOOTER_STOP = re.compile(
     r"\s*(политика|инн|огrn|оферт|конфиденциаль|пользовательск|©|copyright)\b",
@@ -146,6 +83,30 @@ def _domain_from_url(url: str) -> str:
     except Exception:
         return raw.lower().split("/")[0]
     return host[4:] if host.startswith("www.") else host
+
+
+def _clean_phrase(raw: str) -> str:
+    s = re.sub(r"\s+", " ", (raw or "").strip())
+    s = s.strip("·|-—–:;,.")
+    if len(s) < 4 or len(s) > 90:
+        return ""
+    if _SKIP_PHRASE.match(s):
+        return ""
+    if _PROMO_RE.search(s):
+        return ""
+    low = s.lower()
+    if low in _STOP_WORDS:
+        return ""
+    if re.fullmatch(r"[\d\s+().-]+", s):
+        return ""
+    return s
+
+
+def _title_topic(title: str) -> str:
+    if not title:
+        return ""
+    part = title.split("|")[0].split("—")[0].split("-")[0].strip()
+    return _clean_phrase(part) or ""
 
 
 def _clean_entity_name(name: str) -> str:
@@ -181,100 +142,210 @@ def _detect_geo(text: str) -> list[str]:
     return found[:3]
 
 
-def _profile_score(profile: dict, low: str, host: str) -> int:
-    primary = profile.get("primary", profile.get("triggers", ()))
-    if not any(p in low for p in primary):
-        # домен frameclub.ru → каркас
-        pid = profile.get("id")
-        if pid == "karkas" and ("frame" in host or "karkas" in host):
-            pass
+def _heading_texts(headings: list) -> list[str]:
+    out: list[str] = []
+    for item in headings or []:
+        if isinstance(item, dict):
+            t = item.get("text") or ""
         else:
-            return 0
-
-    score = 0
-    for p in primary:
-        if p in low:
-            score += 6 + min(len(p) // 5, 4)
-    for t in profile.get("triggers", ()):
-        if t in low:
-            score += 3
-    for needle in profile.get("if_text", {}):
-        if needle in low:
-            score += 1
-    if profile.get("id") == "karkas" and ("frame" in host or "karkas" in host):
-        score += 8
-    return score
+            t = str(item)
+        if t:
+            out.append(t)
+    return out
 
 
-def _pick_profile(text: str, site_url: str = "") -> dict | None:
-    low = (text or "").lower()
-    host = _domain_from_url(site_url)
-    best: dict | None = None
-    best_score = 0
-    for profile in _NICHE_PROFILES:
-        score = _profile_score(profile, low, host)
-        if score > best_score:
-            best_score = score
-            best = profile
-    return best if best_score > 0 else None
-
-
-def _generic_queries(title: str, text: str) -> list[str]:
-    low = f"{title} {text[:1500]}".lower()
-    words = re.findall(r"[а-яёa-z]{5,}", low)
-    freq: dict[str, int] = {}
-    stop = {
-        "компания", "услуги", "подробнее", "контакты", "главная", "каталог", "новости",
-        "статьи", "политика", "обработку", "персональных", "данных", "согласен",
-        "frameclub", "frame", "club",
-    }
-    for w in words:
-        if w in stop:
+def _headings_by_level(headings: list) -> tuple[list[str], list[str], list[str]]:
+    h1, h2, h3 = [], [], []
+    for item in headings or []:
+        if isinstance(item, dict):
+            level = item.get("level") or "h2"
+            text = item.get("text") or ""
+        else:
+            level, text = "h2", str(item)
+        if not text:
             continue
-        freq[w] = freq.get(w, 0) + 1
-    top = sorted(freq, key=freq.get, reverse=True)[:4]
-    queries: list[str] = []
-    if "каркас" in low:
-        queries.extend(["каркасные дома под ключ", "строительство каркасного дома"])
-    if top:
-        queries.append(top[0])
-        if len(top) > 1:
-            queries.append(f"{top[0]} {top[1]}")
-    if "строительств" in low and "дом" in low:
-        queries.append("строительство домов под ключ")
-    if "аренда" in low:
-        queries.append(f"аренда {top[0]}" if top else "аренда оборудования")
-    if "продаж" in low or "купить" in low:
-        queries.append(f"купить {top[0]}" if top else "купить оборудование")
-    if title and len(title) < 60:
-        queries.insert(0, title.split("|")[0].strip())
-    return queries[:10]
+        if level == "h1":
+            h1.append(text)
+        elif level == "h3":
+            h3.append(text)
+        else:
+            h2.append(text)
+    return h1, h2, h3
 
 
-def _build_queries(profile: dict | None, title: str, text: str) -> list[str]:
-    low = f"{title} {text}".lower()
+def _collect_topics(
+    *,
+    title: str,
+    meta_description: str,
+    headings: list,
+    nav_labels: list[str],
+    text: str,
+) -> list[str]:
+    """Кандидаты в запросы: сначала короткие h2/h3 (услуги), потом title и текст."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str, *, max_len: int = 80) -> None:
+        p = _clean_phrase(raw)
+        if not p or len(p) > max_len:
+            if p and "," in raw:
+                for piece in raw.split(","):
+                    add(piece.strip(), max_len=max_len)
+            return
+        key = p.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(p)
+        if "," in p and 10 < len(p) < 55:
+            for piece in p.split(","):
+                sub = _clean_phrase(piece.strip())
+                if sub and sub.lower() not in seen:
+                    seen.add(sub.lower())
+                    out.append(sub)
+
+    h1, h2, h3 = _headings_by_level(headings)
+    for h in h2 + h3 + h1:
+        add(h)
+    add(_title_topic(title), max_len=70)
+    if meta_description:
+        for chunk in re.split(r"[.!?]\s+", meta_description):
+            add(chunk, max_len=70)
+
+    for label in nav_labels:
+        add(label, max_len=50)
+
+    low = text.lower()
+    for m in re.finditer(
+        r"[а-яёa-z][а-яёa-z\-]{2,}(?:\s+[а-яёa-z][а-яёa-z\-]{2,}){1,2}",
+        low,
+    ):
+        phrase = m.group(0).strip()
+        if any(w in phrase for w in _STOP_WORDS):
+            continue
+        if 12 <= len(phrase) <= 55:
+            add(phrase)
+
+    return out[:20]
+
+
+def _topic_core(topic: str) -> str:
+    """Короткая тема для шаблонов «аренда …», «купить …»."""
+    t = topic.lower().strip()
+    for prefix in (
+        "аренда ", "продажа ", "купить ", "строительство ", "монтаж ",
+        "изготовление ", "усиление ", "ремонт ", "проектирование ",
+    ):
+        if t.startswith(prefix):
+            t = t[len(prefix):]
+    return t.strip() or topic.lower()
+
+
+def _expand_queries(topics: list[str], body_low: str) -> list[str]:
     queries: list[str] = []
-    if profile:
-        queries.extend(profile["queries"])
-        for needle, q in profile.get("if_text", {}).items():
-            if needle in low and q not in queries:
-                queries.append(q)
-    else:
-        queries.extend(_generic_queries(title, text))
+    seen: set[str] = set()
+
+    def add(q: str) -> None:
+        q = re.sub(r"\s+", " ", (q or "").strip())
+        if len(q) < 4 or len(q) > 80:
+            return
+        key = q.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        queries.append(q)
+
+    for topic in topics[:12]:
+        add(topic)
+        if len(topic) > 45:
+            continue
+        core = _topic_core(topic)
+        if not core or len(core) > 40:
+            continue
+        for marker, templates in _INTENT_MARKERS:
+            if marker in body_low:
+                for tpl in templates:
+                    add(tpl.format(core))
+                break
+
+    if "под ключ" in body_low:
+        for topic in topics[:5]:
+            if len(topic) > 45:
+                continue
+            core = _topic_core(topic)
+            if core and len(core) <= 40:
+                add(f"{core} под ключ")
+
+    return queries
+
+
+def _build_niche(
+    *,
+    title: str,
+    meta_description: str,
+    headings: list,
+    topics: list[str],
+) -> str:
+    parts: list[str] = []
+    seen: set[str] = set()
+    h1, h2, h3 = _headings_by_level(headings)
+
+    def add_part(raw: str) -> None:
+        p = _clean_phrase(raw) or raw.strip()
+        if not p or len(p) < 8:
+            return
+        key = p.lower()[:60]
+        if key in seen:
+            return
+        seen.add(key)
+        parts.append(p)
+
+    for h in (h2[:2] + h1[:1] + h3[:1]):
+        add_part(h)
+    add_part(_title_topic(title))
+    if meta_description:
+        add_part(meta_description.split(".")[0])
+    if not parts and topics:
+        add_part(topics[0])
+
+    niche = ". ".join(parts)
+    if len(niche) > 300:
+        niche = niche[:297].rsplit(" ", 1)[0] + "…"
+    return niche
+
+
+def _build_queries(
+    *,
+    title: str,
+    meta_description: str,
+    headings: list[str],
+    nav_labels: list[str],
+    text: str,
+) -> list[str]:
+    topics = _collect_topics(
+        title=title,
+        meta_description=meta_description,
+        headings=headings,
+        nav_labels=nav_labels,
+        text=text,
+    )
+    body_low = f"{title} {meta_description} {text}".lower()
+    queries = _expand_queries(topics, body_low)
 
     geos = _detect_geo(text)
-    base_for_geo = queries[0] if queries else ""
-    for city in geos:
-        gq = f"{base_for_geo} {city}".strip()
-        if gq and gq not in queries:
-            queries.append(gq)
+    if geos and queries:
+        base = queries[0]
+        for city in geos[:2]:
+            gq = f"{base} {city}"
+            if gq.lower() not in {q.lower() for q in queries}:
+                queries.append(gq)
+
+    if not queries and topics:
+        queries = topics[:8]
 
     seen: set[str] = set()
     out: list[str] = []
     for q in queries:
-        q = re.sub(r"\s+", " ", (q or "").strip())
-        if not q:
-            continue
         key = q.lower()
         if key in seen:
             continue
@@ -283,17 +354,13 @@ def _build_queries(profile: dict | None, title: str, text: str) -> list[str]:
     return out[:14]
 
 
-def _build_exclude(client_domain: str, profile: dict | None) -> str:
+def _build_exclude(client_domain: str) -> str:
     domains: list[str] = []
     if client_domain:
         domains.append(client_domain)
     for d in _STANDARD_EXCLUDE:
         if d not in domains:
             domains.append(d)
-    if profile:
-        for d in profile.get("exclude_extra", ()):
-            if d not in domains:
-                domains.append(d)
     return ", ".join(domains)
 
 
@@ -302,20 +369,45 @@ def suggest_brief_from_analysis(
     site_url: str,
     title: str,
     text_sample: str,
+    meta_description: str = "",
+    headings: list | None = None,
+    nav_labels: list[str] | None = None,
 ) -> dict:
     text = text_sample or ""
-    profile = _pick_profile(text, site_url)
+    headings = headings or []
+    nav_labels = nav_labels or []
     client_domain = _domain_from_url(site_url)
-    niche = profile["niche"] if profile else (title.split("|")[0].strip() if title else "")
+
+    topics = _collect_topics(
+        title=title,
+        meta_description=meta_description,
+        headings=headings,
+        nav_labels=nav_labels,
+        text=text,
+    )
+    niche = _build_niche(
+        title=title,
+        meta_description=meta_description,
+        headings=headings,
+        topics=topics,
+    )
     if not niche and text:
-        niche = re.sub(r"\s+", " ", text[:200]).strip()
-    queries = _build_queries(profile, title, text)
+        niche = re.sub(r"\s+", " ", text[:220]).strip()
+
+    queries = _build_queries(
+        title=title,
+        meta_description=meta_description,
+        headings=headings,
+        nav_labels=nav_labels,
+        text=text,
+    )
+
     return {
         "clientSite": site_url,
         "clientName": _extract_company_name(title, text),
         "niche": niche[:300],
         "queries": "\n".join(queries),
-        "excludeDomains": _build_exclude(client_domain, profile),
+        "excludeDomains": _build_exclude(client_domain),
         "title": title or "",
-        "profile_id": profile.get("id") if profile else "",
+        "source": "homepage",
     }

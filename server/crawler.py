@@ -264,11 +264,39 @@ async def analyze_site_homepage(site_url: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     title = _title_from_html(html)
     text = soup.get_text("\n", strip=True)[:8000]
+
+    meta_description = ""
+    for sel in (
+        ("meta", {"name": "description"}),
+        ("meta", {"property": "og:description"}),
+        ("meta", {"name": "twitter:description"}),
+    ):
+        tag = soup.find(sel[0], attrs=sel[1])
+        if tag and tag.get("content"):
+            meta_description = tag["content"].strip()
+            break
+
+    headings: list[dict[str, str]] = []
+    for tag in soup.find_all(["h1", "h2", "h3"]):
+        line = tag.get_text(" ", strip=True)
+        if line:
+            headings.append({"level": tag.name, "text": line})
+
+    nav_labels: list[str] = []
+    for block in soup.find_all(["nav", "header"])[:4]:
+        for a in block.find_all("a", limit=40):
+            label = a.get_text(" ", strip=True)
+            if label:
+                nav_labels.append(label)
+
     return {
         "ok": True,
         "site_url": normalize_url(final_url) or root,
         "title": title,
         "text_sample": text[:4000],
+        "meta_description": meta_description[:500],
+        "headings": headings[:40],
+        "nav_labels": nav_labels[:30],
     }
 
 

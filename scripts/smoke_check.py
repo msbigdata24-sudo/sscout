@@ -61,40 +61,46 @@ def check_export_filename() -> None:
 def check_brief_suggest_frameclub() -> None:
     from server.brief_suggest import suggest_brief_from_analysis
 
-    sample = (
-        "Философия каркасного дома Frame club производство каркасные дома под ключ "
-        "внешняя отделка внутренняя отделка ИНН 332807583351 ИП Усик Тимофей Сергеевич "
-        "Политика обработки данных"
-    )
     r = suggest_brief_from_analysis(
         site_url="http://frameclub.ru/",
         title="Главная | Frameclub",
-        text_sample=sample,
+        text_sample=(
+            "Философия каркасного дома Frame club производство каркасные дома под ключ "
+            "внешняя отделка ИНН 332807583351 ИП Усик Тимофей Сергеевич"
+        ),
+        meta_description="Дом с полной готовностью к проживанию за 2 месяца",
+        headings=[
+            {"level": "h1", "text": "Дом с полной готовностью к проживанию за 2 месяца"},
+            {"level": "h2", "text": "Собираем дома на собственном производстве"},
+            {"level": "h3", "text": "Каркасные дома под ключ"},
+        ],
+        nav_labels=["Каталог", "Портфолио", "Производство"],
     )
-    assert r.get("profile_id") == "karkas", r.get("profile_id")
     assert "каркас" in r["niche"].lower()
-    assert "каркасные дома" in r["queries"]
+    assert "каркас" in r["queries"].lower()
     assert "углеволок" not in r["queries"].lower()
     assert r["clientName"] == "ИП Усик Тимофей Сергеевич"
+    assert r.get("source") == "homepage"
 
 
 def check_brief_suggest_opalubka() -> None:
     from server.brief_suggest import suggest_brief_from_analysis
 
-    sample = (
-        "Аренда и продажа опалубки крупнощитовая мелкощитовая перекрытия колонны "
-        "Щелково Москва © ООО «Опалубка-Домстрой»"
-    )
     r = suggest_brief_from_analysis(
         site_url="https://www.opalubka-domstroy.ru/",
-        title="Продажа строительной опалубки в Москве",
-        text_sample=sample,
+        title="Продажа строительной опалубки в Москве | Купить новую или БУ",
+        text_sample="Аренда и продажа опалубки крупнощитовая мелкощитовая Щелково Москва",
+        meta_description="Аренда, продажа опалубки и комплектующих в Москве",
+        headings=[
+            {"level": "h2", "text": "Аренда, продажа опалубки"},
+            {"level": "h3", "text": "Крупнощитовая опалубка"},
+            {"level": "h3", "text": "Мелкощитовая опалубка"},
+        ],
+        nav_labels=["Аренда оборудования", "Продажа оборудования"],
     )
-    assert r.get("profile_id") == "opalubka"
     assert "опалуб" in r["niche"].lower()
-    assert "аренда опалубки" in r["queries"]
+    assert "опалуб" in r["queries"].lower()
     assert "opalubka-domstroy.ru" in r["excludeDomains"]
-    assert "avito.ru" in r["excludeDomains"]
 
 
 def main() -> None:

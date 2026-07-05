@@ -157,6 +157,9 @@ async def suggest_brief(url: str = Query(..., min_length=4)):
         site_url=data.get("site_url") or normalized,
         title=data.get("title") or "",
         text_sample=data.get("text_sample") or "",
+        meta_description=data.get("meta_description") or "",
+        headings=data.get("headings") or [],
+        nav_labels=data.get("nav_labels") or [],
     )
     return {"ok": True, **payload}
 
