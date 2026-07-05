@@ -711,6 +711,22 @@
     }
 
     .toast.show { transform: translateY(0); opacity: 1; }
+
+    #suggest-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    #suggest-status[hidden] { display: none !important; }
+
+    .card.suggest-active {
+      box-shadow: 0 0 0 1px rgba(61, 139, 253, 0.35);
+    }
   </style>
 </head>
 <body>
@@ -745,7 +761,7 @@
         </header>
 
         <form id="brief-form">
-          <div class="card">
+          <div class="card" id="client-card">
             <div class="card-title">Клиент</div>
             <div class="grid-2">
               <div class="field">
@@ -759,6 +775,7 @@
                   <button type="button" class="btn btn-ghost btn-sm" id="btn-suggest-brief">Заполнить по сайту</button>
                 </div>
                 <p class="hint">После ввода URL подставим нишу, запросы и исключения. Регионы — только вручную.</p>
+                <p id="suggest-status" hidden aria-live="polite">Опрос сайта…</p>
               </div>
             </div>
             <div class="field">

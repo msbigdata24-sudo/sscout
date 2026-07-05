@@ -25,7 +25,7 @@ from server.config import (
 from server.phones import normalize_digits
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.brief_suggest import suggest_brief_from_analysis
-from server.crawler import analyze_client_site, normalize_url
+from server.crawler import analyze_client_site, analyze_site_homepage, normalize_url
 from server.db import db
 from server.pipeline import (
     _can_resume_run,
@@ -150,7 +150,7 @@ async def suggest_brief(url: str = Query(..., min_length=4)):
     normalized = normalize_client_site(url)
     if not normalized:
         raise HTTPException(400, "Укажите корректный URL сайта")
-    data = await analyze_client_site(normalized, depth=1, delay_ms=0)
+    data = await analyze_site_homepage(normalized)
     if not data.get("ok"):
         raise HTTPException(400, data.get("error") or "Не удалось открыть сайт")
     payload = suggest_brief_from_analysis(

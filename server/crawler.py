@@ -251,6 +251,27 @@ def domain_from_crawl(final_url: str, fallback: str) -> str:
     return host or fallback
 
 
+async def analyze_site_homepage(site_url: str) -> dict:
+    """Быстрый разбор только главной — для автозаполнения брифа (без обхода контактов)."""
+    from server.fetcher import fetch_page
+
+    root = normalize_url(site_url)
+    if not root:
+        return {"ok": False, "error": "Некорректный URL"}
+    html, final_url, code, method = await fetch_page(root, use_proxy=False, delay_ms=0)
+    if not html or code >= 400:
+        return {"ok": False, "error": method or f"Сайт недоступен ({code or 'нет ответа'})"}
+    soup = BeautifulSoup(html, "html.parser")
+    title = _title_from_html(html)
+    text = soup.get_text("\n", strip=True)[:8000]
+    return {
+        "ok": True,
+        "site_url": normalize_url(final_url) or root,
+        "title": title,
+        "text_sample": text[:4000],
+    }
+
+
 async def analyze_client_site(site_url: str, **kwargs) -> dict:
     root = normalize_url(site_url)
     if not root:

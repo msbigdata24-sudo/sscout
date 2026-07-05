@@ -117,9 +117,9 @@ def _extract_company_name(title: str, text: str) -> str:
     blob = f"{title}\n{text[:4000]}"
     patterns = (
         r"(ООО\s+[«\"][^»\"]+[»\"])",
-        r"(ООО\s+[A-Za-zА-Яа-яёЁ0-9\-«»\"'\s]+)",
         r"(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3})",
-        r"©[^,\n]{0,40},\s*(ООО\s+[«\"][^»\"]+[»\"])",
+        r"©[^\n]{0,80}(ООО\s+[«\"][^»\"]+[»\"])",
+        r"©[^\n]{0,80}(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3})",
     )
     for pat in patterns:
         m = re.search(pat, blob, flags=re.IGNORECASE)
@@ -127,8 +127,6 @@ def _extract_company_name(title: str, text: str) -> str:
             name = m.group(1).strip().strip(",")
             if len(name) >= 4:
                 return name[:120]
-    if title and len(title) < 80 and not title.lower().startswith("http"):
-        return title.strip()
     return ""
 
 

@@ -54,7 +54,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-05-brief-suggest";
+  const EXPECTED_BUILD_VERSION = "2026-07-05-suggest-fix";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -1176,22 +1176,73 @@
   }
 
   let lastSuggestedSiteUrl = "";
+  let suggestBriefInFlight = false;
+  let suggestBriefTimer = null;
+  let suggestBlurTimer = null;
+
+  function setSuggestUi(active, message) {
+    const btn = $("#btn-suggest-brief");
+    const status = $("#suggest-status");
+    const card = $("#client-card");
+    if (btn) {
+      btn.disabled = active;
+      btn.classList.toggle("is-loading", active);
+      btn.setAttribute("aria-busy", active ? "true" : "false");
+    }
+    if (card) card.classList.toggle("suggest-active", active);
+    if (status) {
+      status.hidden = !active;
+      if (message) status.textContent = message;
+    }
+    const hint = $("#niche-hint");
+    if (hint && active && message) hint.textContent = message;
+  }
 
   async function suggestBriefFromSite(force) {
     const url = normalizeClientSite($("#client-site")?.value || "");
-    if (!url || !isValidClientSite(url)) return;
-    if (!force && url === lastSuggestedSiteUrl) return;
-    if (!apiOnline) {
-      toast("Сервер офлайн — автозаполнение недоступно");
+    if (!url || !isValidClientSite(url)) {
+      toast("Укажите корректный URL сайта");
       return;
     }
+    if (suggestBriefInFlight) return;
+    if (!force && url === lastSuggestedSiteUrl) return;
+
+    if (!apiOnline) {
+      const health = await checkApi();
+      if (!health) {
+        toast("Сервер офлайн — подождите «Сервер: онлайн» или Ctrl+F5");
+        return;
+      }
+    }
+
+    suggestBriefInFlight = true;
+    const started = Date.now();
+    setSuggestUi(true, "Опрос сайта и заполнение брифа…");
+
+    suggestBriefTimer = setInterval(() => {
+      const sec = Math.floor((Date.now() - started) / 1000);
+      setSuggestUi(true, `Опрос сайта и заполнение брифа… ${sec} сек`);
+    }, 500);
+
     const hint = $("#niche-hint");
-    if (hint) hint.textContent = "Анализируем сайт…";
     try {
-      const res = await fetch(`${API_BASE}/api/brief/suggest?url=${encodeURIComponent(url)}`);
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 90000);
+      const res = await fetch(
+        `${API_BASE}/api/brief/suggest?url=${encodeURIComponent(url)}`,
+        { signal: ctrl.signal },
+      );
+      clearTimeout(timeout);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (hint) hint.textContent = typeof data.detail === "string" ? data.detail : "Не удалось разобрать сайт";
+        const err = typeof data.detail === "string" ? data.detail : "Не удалось разобрать сайт";
+        if (hint) hint.textContent = err;
+        toast(err);
+        return;
+      }
+      if (!data.niche && !data.queries) {
+        if (hint) hint.textContent = "Сайт открыт, но не удалось определить нишу — заполните вручную";
+        toast("Мало данных на главной странице — допишите нишу вручную");
         return;
       }
       lastSuggestedSiteUrl = url;
@@ -1204,14 +1255,22 @@
       brief = readForm();
       window.SSStorage.saveBrief(brief);
       updateRunUI();
-      if (hint) {
-        hint.textContent = data.title
-          ? `Заполнено по сайту · ${data.title}`
-          : "Ниша, запросы и исключения подставлены · регионы укажите вручную";
-      }
+      const doneMsg = data.title
+        ? `Готово · ${data.title}`
+        : "Ниша, запросы и исключения подставлены · регионы укажите вручную";
+      if (hint) hint.textContent = doneMsg;
       toast("Бриф заполнен по сайту · регионы — вручную");
-    } catch (_) {
-      if (hint) hint.textContent = "Ошибка связи с сервером";
+    } catch (e) {
+      const msg = e?.name === "AbortError"
+        ? "Сайт долго не отвечает — попробуйте ещё раз"
+        : "Ошибка связи с сервером";
+      if (hint) hint.textContent = msg;
+      toast(msg);
+    } finally {
+      clearInterval(suggestBriefTimer);
+      suggestBriefTimer = null;
+      suggestBriefInFlight = false;
+      setSuggestUi(false);
     }
   }
 
@@ -1308,10 +1367,15 @@
     });
 
     $("#client-site").addEventListener("blur", () => {
-      suggestBriefFromSite(false);
-      refreshStartButtonLabel();
+      clearTimeout(suggestBlurTimer);
+      suggestBlurTimer = setTimeout(() => {
+        suggestBriefFromSite(false);
+        refreshStartButtonLabel();
+      }, 350);
     });
+    $("#btn-suggest-brief")?.addEventListener("mousedown", (e) => e.preventDefault());
     $("#btn-suggest-brief")?.addEventListener("click", () => {
+      clearTimeout(suggestBlurTimer);
       lastSuggestedSiteUrl = "";
       suggestBriefFromSite(true);
     });
