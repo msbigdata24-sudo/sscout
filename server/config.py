@@ -9,9 +9,13 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-05-region-exclude-fix"
+BUILD_VERSION = "2026-07-05-phones-overflow-cap"
 
 MAX_EXPORT_PHONES = 6
+
+# Если на сайте больше N уникальных номеров — оставляем только мобильные, не более M штук.
+PHONES_OVERFLOW_THRESHOLD = 10
+PHONES_OVERFLOW_MOBILE_MAX = 10
 
 XMLRIVER_USER = os.getenv("XMLRIVER_USER", "").strip()
 XMLRIVER_KEY = os.getenv("XMLRIVER_KEY", "").strip()

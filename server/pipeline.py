@@ -9,6 +9,7 @@ from server.config import (
     CRAWL_CONCURRENCY,
     DEFAULT_MAX_SITES,
     DEFAULT_PILOT_QUERIES,
+    PHONES_OVERFLOW_THRESHOLD,
     PILOT_SEED_DOMAINS,
     SERP_PAGES,
     SITE_CRAWL_TIMEOUT,
@@ -235,12 +236,17 @@ async def _crawl_candidates(
                 region_mode=region_mode,
             )
             phones_meta = cr.get("phones_meta") or []
+            raw_unique = len({e.get("phone") for e in phones_meta if e.get("phone")})
             crawl_st = row["crawl_status"]
-            await site_log(
-                f"Парсинг {domain}… Найдено {len(phones_meta)} телефонов",
-                domain,
-                crawl_st,
-            )
+            kept = len(row.get("phones") or [])
+            if raw_unique > PHONES_OVERFLOW_THRESHOLD:
+                msg = (
+                    f"Парсинг {domain}… на сайте {raw_unique} номеров — "
+                    f"оставлено {kept} мобильных (лимит при переполнении)"
+                )
+            else:
+                msg = f"Парсинг {domain}… Найдено {kept} телефонов"
+            await site_log(msg, domain, crawl_st)
 
             async with lock:
                 rows.append(row)

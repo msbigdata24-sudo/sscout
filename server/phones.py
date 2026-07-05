@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from server.config import PHONES_OVERFLOW_MOBILE_MAX, PHONES_OVERFLOW_THRESHOLD
+
 # Городские коды для общих телефонов (Москва, СПб и др.)
 _CITY_CODES = ("495", "499", "812", "343", "831", "846", "351", "383")
 
@@ -14,6 +16,11 @@ _SKIP_LINK_RE = re.compile(r"(wa\.me|whatsapp|t\.me|telegram|viber|max\.ru)", re
 _CONTEXT_RE = re.compile(
     r"(?:телефон|тел\.|звоните|контакт|call|phone)[:\s\-—]{0,12}"
     r"([+\d()\s\-—]{10,24})",
+    re.IGNORECASE,
+)
+
+_FOOTER_HINT_RE = re.compile(
+    r"(footer|podval|bottom[-_]?bar|site[-_]?bottom|copyright|подвал|футер|нижн)",
     re.IGNORECASE,
 )
 
@@ -88,6 +95,45 @@ def _add_phone(store: list[dict], raw: str, source: str) -> None:
     store.append({"phone": digits, "type": meta["type"], "source": source})
 
 
+def _add_from_block(store: list[dict], block, source: str) -> None:
+    _add_from_text(store, block.get_text(" ", strip=True), source)
+    for a in block.find_all("a", href=True):
+        href = a.get("href") or ""
+        if _SKIP_LINK_RE.search(href):
+            continue
+        low = href.lower()
+        if low.startswith("tel:"):
+            _add_phone(store, href[4:], f"{source}-tel")
+        elif low.startswith("callto:"):
+            _add_phone(store, href[7:], f"{source}-tel")
+
+
+def _footer_blocks(soup: BeautifulSoup) -> list:
+    blocks: list = []
+    seen: set[int] = set()
+
+    def add(block) -> None:
+        key = id(block)
+        if key not in seen:
+            seen.add(key)
+            blocks.append(block)
+
+    for footer in soup.find_all("footer"):
+        add(footer)
+
+    for tag in soup.find_all(["div", "section", "aside"]):
+        role = (tag.get("role") or "").lower()
+        if role == "contentinfo":
+            add(tag)
+            continue
+        cls = " ".join(tag.get("class") or [])
+        el_id = tag.get("id") or ""
+        if _FOOTER_HINT_RE.search(cls) or _FOOTER_HINT_RE.search(el_id):
+            add(tag)
+
+    return blocks
+
+
 def extract_phones(html: str, url: str = "") -> list[dict]:
     """Извлечь мобильные и городские номера из HTML."""
     if not html:
@@ -99,16 +145,7 @@ def extract_phones(html: str, url: str = "") -> list[dict]:
     # Шапка и навигация — телефоны часто только там (как на sk-teremok.ru).
     for tag_name in ("header", "nav"):
         for block in soup.find_all(tag_name):
-            _add_from_text(found, block.get_text(" ", strip=True), tag_name)
-            for a in block.find_all("a", href=True):
-                href = a.get("href") or ""
-                low = href.lower()
-                if _SKIP_LINK_RE.search(href):
-                    continue
-                if low.startswith("tel:"):
-                    _add_phone(found, href[4:], "tel")
-                elif low.startswith("callto:"):
-                    _add_phone(found, href[7:], "callto")
+            _add_from_block(found, block, tag_name)
 
     for el in soup.select('[itemprop="telephone"], [class*="phone"], [class*="tel"]'):
         _add_from_text(found, el.get_text(" ", strip=True), "header-class")
@@ -117,9 +154,9 @@ def extract_phones(html: str, url: str = "") -> list[dict]:
             if val:
                 _add_from_text(found, str(val), "data-attr")
 
-    # footer
-    for footer in soup.find_all("footer"):
-        _add_from_text(found, footer.get_text(" ", strip=True), "footer")
+    # Подвал — отдел продаж, второй телефон, дубли из шапки.
+    for block in _footer_blocks(soup):
+        _add_from_block(found, block, "footer")
 
     # JSON-LD
     for script in soup.find_all("script", type="application/ld+json"):
@@ -151,9 +188,6 @@ def extract_phones(html: str, url: str = "") -> list[dict]:
     _add_from_text(found, body_text, "text")
     for m in _CONTEXT_RE.finditer(body_text):
         _add_phone(found, m.group(1), "context")
-
-    for m in _RAW_PHONE_RE.finditer(html):
-        _add_phone(found, m.group(0), "html")
 
     return found
 
@@ -220,12 +254,49 @@ def filter_phones_list(phones: list[str], phone_filter: str) -> list[str]:
     return out
 
 
+_SOURCE_RANK: dict[str, int] = {
+    "header": 0,
+    "nav": 1,
+    "tel": 2,
+    "callto": 2,
+    "footer": 3,
+    "header-class": 4,
+    "data-attr": 5,
+    "json-ld": 6,
+    "meta": 7,
+    "context": 8,
+    "text": 9,
+    "html": 10,
+}
+
+
+def _source_rank(item: dict) -> int:
+    src = (item.get("source") or "text").lower()
+    if src in _SOURCE_RANK:
+        return _SOURCE_RANK[src]
+    if src.endswith("-tel"):
+        return 2
+    return 9
+
+
+def _dedupe_enriched(enriched: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in enriched:
+        phone = item.get("phone")
+        if not phone or phone in seen:
+            continue
+        seen.add(phone)
+        out.append(item)
+    return out
+
+
 def pick_phones_enriched(
     enriched: list[dict],
     phone_filter: str = "business",
 ) -> tuple[str, str, str, str]:
     phones = pick_phones_list(enriched, phone_filter)
-    types = {e["phone"]: e["type"] for e in enriched}
+    types = {e["phone"]: e.get("type") or phone_type(e["phone"]) for e in enriched}
     p1 = phones[0] if phones else ""
     p2 = phones[1] if len(phones) > 1 else ""
     return p1, p2, types.get(p1, ""), types.get(p2, "")
@@ -235,17 +306,24 @@ def pick_phones_list(
     enriched: list[dict],
     phone_filter: str = "business",
 ) -> list[str]:
-    phones = [e["phone"] for e in enriched]
+    unique = _dedupe_enriched(enriched)
+
+    if len(unique) > PHONES_OVERFLOW_THRESHOLD:
+        mobiles = [e for e in unique if phone_type(e["phone"]) == "mobile"]
+        mobiles.sort(key=_source_rank)
+        return [e["phone"] for e in mobiles[:PHONES_OVERFLOW_MOBILE_MAX]]
+
+    phones = [e["phone"] for e in unique]
     filtered = filter_phones_list(phones, phone_filter)
     if not filtered and phone_filter == "mobile":
         filtered = filter_phones_list(phones, "business")
     seen: set[str] = set()
-    unique: list[str] = []
+    result: list[str] = []
     for p in filtered:
         if p not in seen:
             seen.add(p)
-            unique.append(p)
-    return unique
+            result.append(p)
+    return result
 
 
 def format_phone_display(digits: str) -> str:
