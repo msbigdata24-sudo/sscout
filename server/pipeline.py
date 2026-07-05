@@ -662,7 +662,11 @@ async def resume_pipeline_background(run_id: str) -> str:
     run = db.get_run(run_id)
     if not run:
         raise ValueError("Прогон не найден")
-    if run.get("status") not in ("stopped", "error"):
+    status = run.get("status") or ""
+    if status == "running":
+        if _running.get(run_id):
+            raise ValueError("Сбор уже выполняется на сервере")
+    elif status not in ("stopped", "error"):
         raise ValueError("Продолжить можно только остановленный или упавший прогон")
     if not _can_resume_run(run):
         raise ValueError("Нет сохранённого прогресса для продолжения")
@@ -673,6 +677,9 @@ async def resume_pipeline_background(run_id: str) -> str:
 
 def _can_resume_run(run: dict) -> bool:
     status = run.get("status") or ""
+    run_id = run.get("id") or ""
+    if status == "running":
+        return not _running.get(run_id)
     if status not in ("stopped", "error"):
         return False
     pipeline = run.get("pipeline") or {}

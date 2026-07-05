@@ -214,8 +214,11 @@
 
   function isResumableRunInfo(info) {
     if (!info) return false;
-    if (info.status !== "stopped") return false;
     if (info.can_resume) return true;
+    if (info.status === "running") {
+      return (info.results_count || 0) > 0 || (info.progress || 0) > 0;
+    }
+    if (info.status !== "stopped" && info.status !== "error") return false;
     const p = info.pipeline || {};
     if (p.analyze === "done") return true;
     return PIPELINE_STEPS.some((s) => p[s.id] === "done");
@@ -244,7 +247,7 @@
       const data = await res.json();
       for (const it of data.items || []) {
         if (site && it.client_site && it.client_site !== site) continue;
-        if (it.status !== "stopped") continue;
+        if (!["stopped", "error", "running"].includes(it.status)) continue;
         const st = await fetch(`${API_BASE}/api/run/${it.id}`);
         if (!st.ok) continue;
         const info = await st.json();
@@ -653,7 +656,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-05-phones-overflow-cap";
+      const EXPECTED_VERSION = "2026-07-05-resume-fix";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
@@ -754,6 +757,8 @@
     if (data.status === "error") {
       clearInterval(pollTimer);
       stopRunTimer();
+      saveResumeRunId(runId);
+      currentRunId = runId;
       const logs = [...(data.pipeline?.logs || [])];
       if (data.error && !logs.some((l) => l.msg === data.error)) {
         logs.push({ ts: "--:--:--", msg: data.error, status: "error" });
@@ -848,11 +853,16 @@
   async function startPolling(runId) {
     currentRunId = runId;
     isLiveRun = true;
-    pollTimer = setInterval(() => pollRun(runId).catch((e) => {
+    saveResumeRunId(runId);
+    pollTimer = setInterval(() => pollRun(runId).catch(() => {
       clearInterval(pollTimer);
+      pollTimer = null;
       stopRunTimer();
-      toast(e.message);
+      saveResumeRunId(runId);
+      currentRunId = runId;
+      toast("Связь с сервером прервана · нажмите «Продолжить сбор»");
       setRunButtons(false);
+      refreshStartButtonLabel();
     }), 1500);
     await pollRun(runId);
   }
@@ -974,8 +984,8 @@
         throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка запуска");
       }
       currentRunId = payload.run_id;
-      if (payload.resumed) {
-        toast("Продолжаем с места остановки…");
+      if (payload.resumed || payload.reconnected) {
+        toast(payload.reconnected ? "Подключаемся к сбору…" : "Продолжаем с места остановки…");
         await showRunState(currentRunId, "running");
       } else {
         saveResumeRunId("");
@@ -999,7 +1009,14 @@
     setProgressUI(5, "Продолжение сбора…", "running");
     renderLiveLogs(null, true);
     try {
-      await showRunState(runId, "running");
+      const state = await showRunState(runId, "running");
+      if (state?.status === "running") {
+        toast("Подключаемся к идущему сбору…");
+        currentRunId = runId;
+        saveResumeRunId(runId);
+        await startPolling(runId);
+        return;
+      }
       const res = await fetch(`${API_BASE}/api/run/${runId}/resume`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1011,8 +1028,8 @@
         throw new Error(typeof err === "string" ? err : JSON.stringify(err) || "Ошибка продолжения");
       }
       toast("Продолжаем с места остановки…");
-      saveResumeRunId("");
       currentRunId = runId;
+      saveResumeRunId(runId);
       await startPolling(runId);
     } catch (e) {
       resetRunUi(e.message || "Не удалось продолжить сбор");

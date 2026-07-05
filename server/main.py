@@ -158,26 +158,23 @@ async def api_start_run(brief: BriefModel):
             "или YANDEX_XML_USER / YANDEX_XML_KEY в .env",
         )
     client_site = brief.clientSite.strip()
-    if find_running_run_id(client_site) or db.find_active_run(client_site):
-        active = db.find_active_run(client_site)
-        run_id = active["id"] if active else find_running_run_id(client_site)
-        raise HTTPException(409, f"Сбор для этого клиента уже выполняется (прогон {run_id})")
-    # Если есть остановленный/упавший прогон по этому же клиенту — продолжаем его,
-    # чтобы повторный «Запустить сбор» не начинал всё сначала.
-    try:
-        for it in db.list_runs(30):
-            if (it.get("client_site") or "") != client_site:
-                continue
-            if it.get("status") != "stopped":
-                continue
-            run = db.get_run(it["id"])
-            if run and _can_resume_run(run):
-                db.update_run(run["id"], brief=brief.model_dump())
-                await resume_pipeline_background(run["id"])
-                return {"run_id": run["id"], "status": "running", "resumed": True}
-    except Exception:
-        # Авто-resume — best-effort. Если что-то пошло не так, стартуем новый прогон.
-        pass
+    mem_id = find_running_run_id(client_site)
+    if mem_id:
+        return {"run_id": mem_id, "status": "running", "reconnected": True, "resumed": False}
+
+    site_norm = client_site.lower().rstrip("/")
+    for it in db.list_runs(30):
+        cs = (it.get("client_site") or "").strip().lower().rstrip("/")
+        if cs != site_norm:
+            continue
+        if it.get("status") not in ("stopped", "error", "running"):
+            continue
+        run = db.get_run(it["id"])
+        if not run or not _can_resume_run(run):
+            continue
+        db.update_run(it["id"], brief=brief.model_dump())
+        await resume_pipeline_background(it["id"])
+        return {"run_id": it["id"], "status": "running", "resumed": True}
 
     try:
         run_id = await start_pipeline_background(brief.model_dump())
