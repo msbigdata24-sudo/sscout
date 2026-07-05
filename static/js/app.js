@@ -359,25 +359,28 @@
   }
 
   function readForm() {
-    const sources = [...$("#sources").selectedOptions].map((o) => o.value);
-    const clientSite = normalizeClientSite($("#client-site").value);
+    const sourcesEl = $("#sources");
+    const sources = sourcesEl
+      ? [...sourcesEl.selectedOptions].map((o) => o.value)
+      : ["serp", "site", "catalog"];
+    const clientSite = normalizeClientSite($("#client-site")?.value || "");
     return ensureBriefQueries({
-      clientName: $("#client-name").value.trim(),
+      clientName: ($("#client-name")?.value || "").trim(),
       clientSite,
-      niche: $("#niche").value.trim(),
+      niche: ($("#niche")?.value || "").trim(),
       regionMode: document.querySelector('input[name="regionMode"]:checked')?.value || "include",
       regions: collectRegions(),
-      queries: $("#queries").value.trim(),
-      excludeDomains: $("#exclude-domains").value.trim(),
-      phoneFilter: $("#phone-filter").value,
+      queries: ($("#queries")?.value || "").trim(),
+      excludeDomains: ($("#exclude-domains")?.value || "").trim(),
+      phoneFilter: $("#phone-filter")?.value || "business",
       sources,
-      checkAlive: $("#check-alive").checked,
-      maxSites: parseInt($("#max-sites").value, 10) || 50,
-      crawlDepth: parseInt($("#crawl-depth").value, 10) || 2,
-      requestDelayMs: parseInt($("#request-delay").value, 10) || 500,
-      useProxy: $("#use-proxy").checked,
-      xmlRiverUser: $("#xml-river-user").value.trim(),
-      apiKey: $("#api-key").value.trim(),
+      checkAlive: $("#check-alive")?.checked ?? true,
+      maxSites: parseInt($("#max-sites")?.value, 10) || 50,
+      crawlDepth: parseInt($("#crawl-depth")?.value, 10) || 2,
+      requestDelayMs: parseInt($("#request-delay")?.value, 10) || 500,
+      useProxy: $("#use-proxy")?.checked ?? false,
+      xmlRiverUser: ($("#xml-river-user")?.value || "").trim(),
+      apiKey: ($("#api-key")?.value || "").trim(),
     });
   }
 
@@ -656,17 +659,38 @@
         refreshStartButtonLabel();
         updateRunUI();
       }
-    }, 15000);
+    }, 8000);
+  }
+
+  async function fetchHealth() {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    try {
+      const res = await fetch(`${API_BASE}/api/health`, { signal: ctrl.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_) {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function checkApi() {
+    const el = $("#api-status");
+    const data = await fetchHealth();
+    if (!data) {
+      apiOnline = false;
+      if (el) {
+        el.textContent = serverOfflineHint();
+        el.style.color = "var(--danger)";
+      }
+      return null;
+    }
+
+    apiOnline = true;
+    const parts = ["Сервер: онлайн"];
     try {
-      const res = await fetch(`${API_BASE}/api/health`);
-      if (!res.ok) throw new Error("offline");
-      const data = await res.json();
-      apiOnline = true;
-      const el = $("#api-status");
-      const parts = ["Сервер: онлайн"];
       const b = readForm();
       const hasKeys = (b.xmlRiverUser || "").trim() && (b.apiKey || "").trim();
       if (data.xmlriver_configured || hasKeys) {
@@ -689,25 +713,34 @@
       } else {
         parts.push("нужен ключ XMLRiver");
       }
-      if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-05-health-retry";
-      rememberDeployVersion(data.version);
-      if (data.version) parts.push(`вер. ${data.version}`);
+    } catch (_) {
+      if (data.xmlriver_configured) parts.push("XMLRiver (ключ в Render)");
+    }
+    if (data.scraping_configured) parts.push("Scraping ✓");
+    const EXPECTED_VERSION = "2026-07-05-health-retry2";
+    rememberDeployVersion(data.version);
+    if (data.version) parts.push(`вер. ${data.version}`);
+    if (el) {
       el.textContent = parts.join(" · ");
       const bad = parts.some((p) => p.includes("✗") || p.includes("нужен"));
-      const oldBuild = !data.version || data.version !== EXPECTED_VERSION;
-      el.style.color = bad || oldBuild ? "var(--warn)" : "var(--success)";
-      if (oldBuild) {
-        toast("Сервер устарел — в Render: Manual Deploy → latest commit (main)");
-      }
-      return data;
-    } catch (_) {
-      apiOnline = false;
-      const el = $("#api-status");
-      el.textContent = serverOfflineHint();
-      el.style.color = "var(--danger)";
-      return null;
+      el.style.color = bad ? "var(--warn)" : "var(--success)";
+      el.style.cursor = "pointer";
+      el.title = "Нажмите, чтобы проверить связь с сервером ещё раз";
     }
+    if (data.version && data.version !== EXPECTED_VERSION && !sessionStorage.getItem("ss-old-build-toast")) {
+      sessionStorage.setItem("ss-old-build-toast", "1");
+      toast("Обновите деплой на Render (main) или подождите автодеплой");
+    }
+    return data;
+  }
+
+  async function checkApiWithRetry() {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const data = await checkApi();
+      if (data) return data;
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+    }
+    return null;
   }
 
   function pipelineStepLabel(state) {
@@ -1190,10 +1223,6 @@
     setProgressUI(0, "Нажмите «Запустить сбор»");
     renderLiveLogs(null, false);
     updateRunUI();
-    checkApi().then(() => {
-      purgeStaleRuns();
-      refreshStartButtonLabel();
-    });
     if (results.length) {
       enableResultsUI();
       $("#results-subtitle").textContent = `${brief.clientName} · ${results.length} строк`;
@@ -1297,7 +1326,21 @@
       });
     });
 
-    checkApi().then(() => scheduleHealthRetry());
+    checkApiWithRetry().then(() => {
+      scheduleHealthRetry();
+      purgeStaleRuns();
+      refreshStartButtonLabel();
+    });
+    $("#api-status")?.addEventListener("click", () => {
+      const el = $("#api-status");
+      if (el) el.textContent = "Сервер: проверка…";
+      checkApiWithRetry().then((data) => {
+        if (data) {
+          refreshStartButtonLabel();
+          updateRunUI();
+        }
+      });
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") checkApi().then(() => refreshStartButtonLabel());
     });
