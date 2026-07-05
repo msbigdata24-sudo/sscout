@@ -162,6 +162,7 @@
   }
 
   let pendingResumeRunId = null;
+  const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
 
   /** Только домен — для сравнения прогонов в истории, не для поля в брифе. */
   function clientSiteHostKey(url) {
@@ -717,7 +718,7 @@
       if (data.xmlriver_configured) parts.push("XMLRiver (ключ в Render)");
     }
     if (data.scraping_configured) parts.push("Scraping ✓");
-    const EXPECTED_VERSION = "2026-07-05-health-retry2";
+    const EXPECTED_VERSION = "2026-07-05-deploy-key-fix";
     rememberDeployVersion(data.version);
     if (data.version) parts.push(`вер. ${data.version}`);
     if (el) {

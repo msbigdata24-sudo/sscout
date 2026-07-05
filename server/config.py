@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-05-health-retry2"
+BUILD_VERSION = "2026-07-05-deploy-key-fix"
 
 MAX_EXPORT_PHONES = 6
 
