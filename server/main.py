@@ -162,10 +162,9 @@ async def api_start_run(brief: BriefModel):
     if mem_id:
         return {"run_id": mem_id, "status": "running", "reconnected": True, "resumed": False}
 
-    site_norm = client_site.lower().rstrip("/")
+    site_key = _client_site_key(client_site)
     for it in db.list_runs(30):
-        cs = (it.get("client_site") or "").strip().lower().rstrip("/")
-        if cs != site_norm:
+        if _client_site_key(it.get("client_site") or "") != site_key:
             continue
         if it.get("status") not in ("stopped", "error", "running"):
             continue
@@ -205,6 +204,17 @@ async def api_quick_run(brief: BriefModel):
 
 
 PIPELINE_STEP_IDS = ("analyze", "serp", "filter", "crawl", "catalog", "dedup")
+
+
+def _client_site_key(url: str) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    try:
+        host = urlparse(raw if "://" in raw else f"https://{raw}").netloc.lower()
+    except Exception:
+        host = raw.lower().split("/")[0]
+    return host[4:] if host.startswith("www.") else host
 
 
 def _calc_progress(pipeline: dict, status: str) -> tuple[int, str]:

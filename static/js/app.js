@@ -161,7 +161,18 @@
     }).join("");
   }
 
-  const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
+  let pendingResumeRunId = null;
+
+  function normalizeClientSite(url) {
+    const raw = (url || "").trim();
+    if (!raw) return "";
+    try {
+      const u = new URL(raw.includes("://") ? raw : `https://${raw}`);
+      return u.hostname.replace(/^www\./i, "").toLowerCase();
+    } catch (_) {
+      return raw.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
+    }
+  }
 
   function clearStaleRun(message) {
     saveResumeRunId("");
@@ -225,7 +236,7 @@
   }
 
   async function findResumableRunId() {
-    const site = ($("#client-site")?.value || brief?.clientSite || "").trim();
+    const siteKey = normalizeClientSite($("#client-site")?.value || brief?.clientSite || "");
     const ids = [
       window.SSStorage.loadResumeRunId(),
       sessionStorage.getItem(window.SSStorage.RESUME_KEY),
@@ -246,7 +257,7 @@
       const res = await fetch(`${API_BASE}/api/history?limit=15`);
       const data = await res.json();
       for (const it of data.items || []) {
-        if (site && it.client_site && it.client_site !== site) continue;
+        if (siteKey && it.client_site && normalizeClientSite(it.client_site) !== siteKey) continue;
         if (!["stopped", "error", "running"].includes(it.status)) continue;
         const st = await fetch(`${API_BASE}/api/run/${it.id}`);
         if (!st.ok) continue;
@@ -258,10 +269,18 @@
   }
 
   async function refreshStartButtonLabel() {
-    const btn = $("#btn-start");
-    if (!btn || runActive) return;
+    const startBtn = $("#btn-start");
+    const resumeBtn = $("#btn-resume");
+    if (runActive) return;
     const resumeId = await findResumableRunId();
-    btn.textContent = resumeId ? "Продолжить сбор" : "Запустить сбор";
+    pendingResumeRunId = resumeId || null;
+    if (resumeBtn) {
+      resumeBtn.hidden = !resumeId;
+      resumeBtn.disabled = !resumeId || startingRun;
+    }
+    if (startBtn && !runActive) {
+      startBtn.textContent = "Запустить сбор";
+    }
   }
 
   function isLocalDev() {
@@ -656,7 +675,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-05-resume-fix";
+      const EXPECTED_VERSION = "2026-07-05-resume-button";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
@@ -815,12 +834,17 @@
   function setRunButtons(running) {
     const hasBrief = Boolean(brief?.clientSite) && isValidClientSite(brief?.clientSite);
     const startBtn = $("#btn-start");
+    const resumeBtn = $("#btn-resume");
     const quickBtn = $("#btn-quick");
     if (startBtn) {
       startBtn.disabled = running || !hasBrief || startingRun;
       startBtn.setAttribute("aria-busy", running ? "true" : "false");
       startBtn.classList.toggle("is-loading", running);
       if (running) startBtn.textContent = "Сбор идёт…";
+    }
+    if (resumeBtn) {
+      resumeBtn.disabled = running || !pendingResumeRunId || startingRun;
+      resumeBtn.hidden = running || !pendingResumeRunId;
     }
     if (quickBtn) quickBtn.disabled = running || !hasBrief || startingRun;
     const stopBtn = $("#btn-stop");
@@ -1211,8 +1235,14 @@
       toast("Пилот загружен");
     });
 
-    $("#client-site").addEventListener("blur", previewNiche);
+    $("#client-site").addEventListener("blur", () => {
+      previewNiche();
+      refreshStartButtonLabel();
+    });
     $("#btn-start").addEventListener("click", runPipeline);
+    $("#btn-resume")?.addEventListener("click", () => {
+      if (pendingResumeRunId) resumePipeline(pendingResumeRunId);
+    });
     $("#btn-quick")?.addEventListener("click", runQuickPipeline);
     $("#btn-stop").addEventListener("click", async () => {
       const runId = currentRunId;
