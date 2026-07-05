@@ -32,9 +32,12 @@ _GEO_CITIES = (
     ("новосибирск", "Новосибирск"),
 )
 
+# primary — хотя бы один обязателен; triggers — дополнительные маркеры (+баллы)
 _NICHE_PROFILES: list[dict] = [
     {
-        "triggers": ("опалуб",),
+        "id": "opalubka",
+        "primary": ("опалуб",),
+        "triggers": ("крупнощит", "мелкощит", "перекрыт", "щитовая опалуб"),
         "niche": "Аренда и продажа строительной опалубки (крупнощитовая, мелкощитовая, перекрытия, колонны).",
         "queries": [
             "аренда опалубки",
@@ -60,7 +63,32 @@ _NICHE_PROFILES: list[dict] = [
         "exclude_extra": ("opalubka.ru", "peri.ru", "snab-str.ru", "opalubka-market.ru"),
     },
     {
-        "triggers": ("углеволок", "wallwrap", "wallgraf", "композитн", "внешн", "армирован"),
+        "id": "karkas",
+        "primary": ("каркас", "frame club", "frameclub"),
+        "triggers": ("каркасн", "sip ", "сип ", "модульн дом", "завод"),
+        "niche": "Строительство каркасных домов под ключ: заводское производство, типовые проекты, сборка на участке.",
+        "queries": [
+            "каркасные дома под ключ",
+            "строительство каркасного дома",
+            "каркасный дом цена",
+            "завод каркасных домов",
+            "каркасный дом под ключ",
+            "дома из сип панелей",
+            "строительство каркасных домов",
+            "каркасный дом проекты",
+        ],
+        "if_text": {
+            "ипотек": "каркасный дом в ипотеку",
+            "модульн": "модульные дома под ключ",
+            "типов": "типовые проекты каркасных домов",
+            "производств": "завод каркасных домов",
+        },
+        "exclude_extra": (),
+    },
+    {
+        "id": "uglevolokno",
+        "primary": ("углеволок", "wallwrap", "wallgraf", "внешнее армирован", "армирование жб", "армирование железобетон"),
+        "triggers": ("композитн армир", "углеродн лент", "усиление жб", "усиление железобетон"),
         "niche": "Усиление железобетонных конструкций углеволокном (внешнее армирование), материалы, проектирование и монтаж.",
         "queries": [
             "усиление конструкций углеволокном",
@@ -81,7 +109,9 @@ _NICHE_PROFILES: list[dict] = [
         "exclude_extra": (),
     },
     {
-        "triggers": ("ангар", "быстровозводим", "металлоконструкц"),
+        "id": "angary",
+        "primary": ("ангар", "быстровозводим"),
+        "triggers": ("металлоконструкц", "сэндвич", "склад под ключ"),
         "niche": "Проектирование и строительство ангаров и быстровозводимых зданий под ключ.",
         "queries": [
             "строительство ангаров под ключ",
@@ -101,6 +131,11 @@ _NICHE_PROFILES: list[dict] = [
     },
 ]
 
+_FOOTER_STOP = re.compile(
+    r"\s*(политика|инн|огrn|оферт|конфиденциаль|пользовательск|©|copyright)\b",
+    re.IGNORECASE,
+)
+
 
 def _domain_from_url(url: str) -> str:
     raw = (url or "").strip()
@@ -113,20 +148,27 @@ def _domain_from_url(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _clean_entity_name(name: str) -> str:
+    s = (name or "").strip().strip(",")
+    s = _FOOTER_STOP.split(s, maxsplit=1)[0].strip()
+    s = re.sub(r"(?i)(политика|инн|оферт).*$", "", s).strip()
+    return s[:120]
+
+
 def _extract_company_name(title: str, text: str) -> str:
-    blob = f"{title}\n{text[:4000]}"
+    blob = f"{title}\n{text[:5000]}"
     patterns = (
         r"(ООО\s+[«\"][^»\"]+[»\"])",
-        r"(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3})",
+        r"ИНН\s+\d+\s+(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})",
+        r"(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})",
         r"©[^\n]{0,80}(ООО\s+[«\"][^»\"]+[»\"])",
-        r"©[^\n]{0,80}(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3})",
     )
     for pat in patterns:
         m = re.search(pat, blob, flags=re.IGNORECASE)
         if m:
-            name = m.group(1).strip().strip(",")
+            name = _clean_entity_name(m.group(1))
             if len(name) >= 4:
-                return name[:120]
+                return name
     return ""
 
 
@@ -139,21 +181,42 @@ def _detect_geo(text: str) -> list[str]:
     return found[:3]
 
 
-def _pick_profile(text: str) -> dict | None:
+def _profile_score(profile: dict, low: str, host: str) -> int:
+    primary = profile.get("primary", profile.get("triggers", ()))
+    if not any(p in low for p in primary):
+        # домен frameclub.ru → каркас
+        pid = profile.get("id")
+        if pid == "karkas" and ("frame" in host or "karkas" in host):
+            pass
+        else:
+            return 0
+
+    score = 0
+    for p in primary:
+        if p in low:
+            score += 6 + min(len(p) // 5, 4)
+    for t in profile.get("triggers", ()):
+        if t in low:
+            score += 3
+    for needle in profile.get("if_text", {}):
+        if needle in low:
+            score += 1
+    if profile.get("id") == "karkas" and ("frame" in host or "karkas" in host):
+        score += 8
+    return score
+
+
+def _pick_profile(text: str, site_url: str = "") -> dict | None:
     low = (text or "").lower()
+    host = _domain_from_url(site_url)
     best: dict | None = None
     best_score = 0
     for profile in _NICHE_PROFILES:
-        score = sum(2 for t in profile["triggers"] if t in low)
-        if score <= 0:
-            continue
-        for needle in profile.get("if_text", {}):
-            if needle in low:
-                score += 1
+        score = _profile_score(profile, low, host)
         if score > best_score:
             best_score = score
             best = profile
-    return best
+    return best if best_score > 0 else None
 
 
 def _generic_queries(title: str, text: str) -> list[str]:
@@ -163,6 +226,7 @@ def _generic_queries(title: str, text: str) -> list[str]:
     stop = {
         "компания", "услуги", "подробнее", "контакты", "главная", "каталог", "новости",
         "статьи", "политика", "обработку", "персональных", "данных", "согласен",
+        "frameclub", "frame", "club",
     }
     for w in words:
         if w in stop:
@@ -170,16 +234,18 @@ def _generic_queries(title: str, text: str) -> list[str]:
         freq[w] = freq.get(w, 0) + 1
     top = sorted(freq, key=freq.get, reverse=True)[:4]
     queries: list[str] = []
+    if "каркас" in low:
+        queries.extend(["каркасные дома под ключ", "строительство каркасного дома"])
     if top:
         queries.append(top[0])
         if len(top) > 1:
             queries.append(f"{top[0]} {top[1]}")
+    if "строительств" in low and "дом" in low:
+        queries.append("строительство домов под ключ")
     if "аренда" in low:
         queries.append(f"аренда {top[0]}" if top else "аренда оборудования")
     if "продаж" in low or "купить" in low:
         queries.append(f"купить {top[0]}" if top else "купить оборудование")
-    if "монтаж" in low:
-        queries.append("монтаж " + (top[0] if top else "оборудование"))
     if title and len(title) < 60:
         queries.insert(0, title.split("|")[0].strip())
     return queries[:10]
@@ -228,12 +294,6 @@ def _build_exclude(client_domain: str, profile: dict | None) -> str:
         for d in profile.get("exclude_extra", ()):
             if d not in domains:
                 domains.append(d)
-    for d in sorted(AGGREGATOR_DOMAINS):
-        clean = d[4:] if d.startswith("www.") else d
-        if clean in domains:
-            continue
-        if clean in _STANDARD_EXCLUDE:
-            continue
     return ", ".join(domains)
 
 
@@ -244,7 +304,7 @@ def suggest_brief_from_analysis(
     text_sample: str,
 ) -> dict:
     text = text_sample or ""
-    profile = _pick_profile(text)
+    profile = _pick_profile(text, site_url)
     client_domain = _domain_from_url(site_url)
     niche = profile["niche"] if profile else (title.split("|")[0].strip() if title else "")
     if not niche and text:
@@ -257,4 +317,5 @@ def suggest_brief_from_analysis(
         "queries": "\n".join(queries),
         "excludeDomains": _build_exclude(client_domain, profile),
         "title": title or "",
+        "profile_id": profile.get("id") if profile else "",
     }

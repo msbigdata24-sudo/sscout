@@ -58,6 +58,26 @@ def check_export_filename() -> None:
     assert re.fullmatch(r"\d{2}-\d{2}-\d{4}", date_part)
 
 
+def check_brief_suggest_frameclub() -> None:
+    from server.brief_suggest import suggest_brief_from_analysis
+
+    sample = (
+        "Философия каркасного дома Frame club производство каркасные дома под ключ "
+        "внешняя отделка внутренняя отделка ИНН 332807583351 ИП Усик Тимофей Сергеевич "
+        "Политика обработки данных"
+    )
+    r = suggest_brief_from_analysis(
+        site_url="http://frameclub.ru/",
+        title="Главная | Frameclub",
+        text_sample=sample,
+    )
+    assert r.get("profile_id") == "karkas", r.get("profile_id")
+    assert "каркас" in r["niche"].lower()
+    assert "каркасные дома" in r["queries"]
+    assert "углеволок" not in r["queries"].lower()
+    assert r["clientName"] == "ИП Усик Тимофей Сергеевич"
+
+
 def check_brief_suggest_opalubka() -> None:
     from server.brief_suggest import suggest_brief_from_analysis
 
@@ -70,6 +90,7 @@ def check_brief_suggest_opalubka() -> None:
         title="Продажа строительной опалубки в Москве",
         text_sample=sample,
     )
+    assert r.get("profile_id") == "opalubka"
     assert "опалуб" in r["niche"].lower()
     assert "аренда опалубки" in r["queries"]
     assert "opalubka-domstroy.ru" in r["excludeDomains"]
@@ -82,6 +103,7 @@ def main() -> None:
     check_region_exclude()
     check_export_phones()
     check_export_filename()
+    check_brief_suggest_frameclub()
     check_brief_suggest_opalubka()
     print(f"OK smoke_check · BUILD_VERSION={BUILD_VERSION}")
 
