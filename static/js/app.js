@@ -292,7 +292,7 @@
   function serverOfflineHint() {
     return isLocalDev()
       ? "Сервер: офлайн · запустите run.ps1"
-      : "Сервер: офлайн · подождите 1–2 мин или обновите деплой на Render";
+      : "Сервер: офлайн · Ctrl+F5 или подождите 1–2 мин (деплой на Render)";
   }
 
   const $ = (sel) => document.querySelector(sel);
@@ -645,6 +645,20 @@
     return false;
   }
 
+  let healthRetryTimer = null;
+
+  function scheduleHealthRetry() {
+    clearInterval(healthRetryTimer);
+    healthRetryTimer = setInterval(async () => {
+      if (apiOnline) return;
+      const data = await checkApi();
+      if (data) {
+        refreshStartButtonLabel();
+        updateRunUI();
+      }
+    }, 15000);
+  }
+
   async function checkApi() {
     try {
       const res = await fetch(`${API_BASE}/api/health`);
@@ -676,7 +690,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-05-client-site-url-fix";
+      const EXPECTED_VERSION = "2026-07-05-health-retry";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
@@ -1283,7 +1297,10 @@
       });
     });
 
-    checkApi();
+    checkApi().then(() => scheduleHealthRetry());
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkApi().then(() => refreshStartButtonLabel());
+    });
   }
 
   document.addEventListener("DOMContentLoaded", init);
