@@ -84,14 +84,10 @@ def normalize_client_site(raw: str) -> str:
     url_match = re.search(r"https?://[^\s<>\"'·|]+", text, flags=re.IGNORECASE)
     if url_match:
         text = url_match.group(0).rstrip(".,;)")
-    elif re.search(r"[\w.-]+\.(ru|com|рф|org|net|biz)\b", text, flags=re.IGNORECASE):
-        domain_match = re.search(
-            r"([\w.-]+\.(?:ru|com|рф|org|net|biz))",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if domain_match:
-            text = domain_match.group(1)
+    elif "://" not in text and re.search(
+        r"[\w.-]+\.(ru|com|рф|org|net|biz)\b", text, flags=re.IGNORECASE
+    ):
+        text = "https://" + text.lstrip("/").rstrip(".,;)")
     return normalize_url(text)
 
 

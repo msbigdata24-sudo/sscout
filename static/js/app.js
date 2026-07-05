@@ -53,16 +53,16 @@
   let sortDir = 1;
   let startingRun = false;
   const PAGE_SIZE = 50;
+  const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
+  const EXPECTED_BUILD_VERSION = "2026-07-05-audit-fix";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
     if (!s) return "";
     const urlMatch = s.match(/https?:\/\/[^\s<>"'·|]+/i);
     if (urlMatch) return urlMatch[0].replace(/[.,;)]+$/, "");
-    const domainMatch = s.match(/([\w.-]+\.(?:ru|com|рф|org|net|biz))/i);
-    if (domainMatch && !s.includes(" ")) {
-      const host = domainMatch[1];
-      return /^https?:\/\//i.test(s) ? s : `https://${host}`;
+    if (!/^https?:\/\//i.test(s) && !s.includes(" ") && /[\w.-]+\.(?:ru|com|рф|org|net|biz)/i.test(s)) {
+      return `https://${s.replace(/^\/+/, "").replace(/[.,;)]+$/, "")}`;
     }
     return s;
   }
@@ -162,7 +162,6 @@
   }
 
   let pendingResumeRunId = null;
-  const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
 
   /** Только домен — для сравнения прогонов в истории, не для поля в брифе. */
   function clientSiteHostKey(url) {
@@ -718,7 +717,6 @@
       if (data.xmlriver_configured) parts.push("XMLRiver (ключ в Render)");
     }
     if (data.scraping_configured) parts.push("Scraping ✓");
-    const EXPECTED_VERSION = "2026-07-05-deploy-key-fix";
     rememberDeployVersion(data.version);
     if (data.version) parts.push(`вер. ${data.version}`);
     if (el) {
@@ -728,7 +726,7 @@
       el.style.cursor = "pointer";
       el.title = "Нажмите, чтобы проверить связь с сервером ещё раз";
     }
-    if (data.version && data.version !== EXPECTED_VERSION && !sessionStorage.getItem("ss-old-build-toast")) {
+    if (data.version && data.version !== EXPECTED_BUILD_VERSION && !sessionStorage.getItem("ss-old-build-toast")) {
       sessionStorage.setItem("ss-old-build-toast", "1");
       toast("Обновите деплой на Render (main) или подождите автодеплой");
     }
@@ -968,7 +966,7 @@
     setProgressUI(5, "Быстрый обход 12 конкурентов…", "running");
     renderLiveLogs(null, true);
     try {
-      const health = await checkApi();
+      const health = await checkApiWithRetry();
       if (!apiOnline) throw new Error("Сервер офлайн");
       const res = await fetch(`${API_BASE}/api/run/quick`, {
         method: "POST",
@@ -1014,7 +1012,7 @@
     setProgressUI(1, "Проверка сервера…", "running");
     renderLiveLogs(null, true);
 
-    const health = await checkApi();
+    const health = await checkApiWithRetry();
     if (!apiOnline) {
       resetRunUi("Сервер офлайн");
       startingRun = false;
