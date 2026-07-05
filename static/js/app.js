@@ -163,7 +163,8 @@
 
   let pendingResumeRunId = null;
 
-  function normalizeClientSite(url) {
+  /** Только домен — для сравнения прогонов в истории, не для поля в брифе. */
+  function clientSiteHostKey(url) {
     const raw = (url || "").trim();
     if (!raw) return "";
     try {
@@ -236,7 +237,7 @@
   }
 
   async function findResumableRunId() {
-    const siteKey = normalizeClientSite($("#client-site")?.value || brief?.clientSite || "");
+    const siteKey = clientSiteHostKey($("#client-site")?.value || brief?.clientSite || "");
     const ids = [
       window.SSStorage.loadResumeRunId(),
       sessionStorage.getItem(window.SSStorage.RESUME_KEY),
@@ -257,7 +258,7 @@
       const res = await fetch(`${API_BASE}/api/history?limit=15`);
       const data = await res.json();
       for (const it of data.items || []) {
-        if (siteKey && it.client_site && normalizeClientSite(it.client_site) !== siteKey) continue;
+        if (siteKey && it.client_site && clientSiteHostKey(it.client_site) !== siteKey) continue;
         if (!["stopped", "error", "running"].includes(it.status)) continue;
         const st = await fetch(`${API_BASE}/api/run/${it.id}`);
         if (!st.ok) continue;
@@ -675,7 +676,7 @@
         parts.push("нужен ключ XMLRiver");
       }
       if (data.scraping_configured) parts.push("Scraping ✓");
-      const EXPECTED_VERSION = "2026-07-05-resume-button";
+      const EXPECTED_VERSION = "2026-07-05-client-site-url-fix";
       rememberDeployVersion(data.version);
       if (data.version) parts.push(`вер. ${data.version}`);
       el.textContent = parts.join(" · ");
