@@ -73,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-06-serp-coverage";
+  const EXPECTED_BUILD_VERSION = "2026-07-06-filter-parallel";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -808,7 +808,10 @@
       clearInterval(pollTimer);
       pollTimer = null;
       clearStaleRun("Прогон не найден — после обновления сервера запустите сбор заново");
-      toast("Нажмите «Быстрая проверка (12 сайтов)»");
+      toast("Нажмите «Продолжить сбор» или запустите сбор заново");
+      return;
+    }
+    if (res.status === 502 || res.status === 503) {
       return;
     }
     if (!res.ok) throw new Error("Статус недоступен");

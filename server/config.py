@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-06-serp-coverage"
+BUILD_VERSION = "2026-07-06-filter-parallel"
 
 MAX_EXPORT_PHONES = 6
 
@@ -25,6 +25,8 @@ SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
 SCRAPINGFISH_API_KEY = os.getenv("SCRAPINGFISH_API_KEY", "").strip()
 PORT = int(os.getenv("PORT") or os.getenv("SIGNAL_SCOUT_PORT") or "8765")
 CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "5"))))
+FILTER_ALIVE_CONCURRENCY = max(4, min(20, int(os.getenv("FILTER_ALIVE_CONCURRENCY", "12"))))
+FILTER_ALIVE_TIMEOUT = max(5, int(os.getenv("FILTER_ALIVE_TIMEOUT", "12")))
 HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "20")))
 SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "45")))
 SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "90")))

@@ -233,10 +233,18 @@ def _html_has_phone_hint(html: str) -> bool:
     return bool(extract_phones(html[:120000], ""))
 
 
-async def check_site_alive(url: str, *, require_phone: bool = False) -> tuple[bool, str, int]:
+async def check_site_alive(
+    url: str,
+    *,
+    require_phone: bool = False,
+    timeout: float | None = None,
+) -> tuple[bool, str, int]:
     headers = {"User-Agent": USER_AGENT}
+    req_timeout = float(timeout if timeout is not None else HTTP_TIMEOUT)
     try:
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, headers=headers, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=req_timeout, headers=headers, follow_redirects=True,
+        ) as client:
             resp = await client.get(url)
             html = resp.text or ""
             final = str(resp.url)

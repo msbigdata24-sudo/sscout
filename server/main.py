@@ -254,7 +254,13 @@ def _calc_progress(pipeline: dict, status: str) -> tuple[int, str]:
         elif st == "running":
             current = step
             progress += 100 // (len(steps) * 2)
-            if step == "crawl":
+            if step == "filter":
+                fp = pipeline.get("filter_progress") or {}
+                total = int(fp.get("total") or 0)
+                checked = int(fp.get("checked") or 0)
+                if total > 0:
+                    progress += int((100 // len(steps)) * 0.75 * checked / total)
+            elif step == "crawl":
                 site_status = pipeline.get("site_status") or {}
                 total = max(1, len(site_status))
                 done_sites = sum(1 for v in site_status.values() if v in ("success", "error", "skip"))
