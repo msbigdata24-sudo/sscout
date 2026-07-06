@@ -80,7 +80,7 @@ def check_brief_suggest_frameclub() -> None:
     assert "каркас" in r["queries"].lower()
     assert "углеволок" not in r["queries"].lower()
     assert r["clientName"] == "ИП Усик Тимофей Сергеевич"
-    assert r.get("source") == "homepage"
+    assert r.get("source") == "site_survey"
 
 
 def check_brief_suggest_opalubka() -> None:
@@ -120,8 +120,12 @@ def check_brief_suggest_strateix() -> None:
             {"level": "h1", "text": "СТРАТЕИКС (STRATEIX)"},
             {"level": "h1", "text": "СТРАТЕИКС АРХИТЕКТУРА ПРИБЫЛИ С ОБРАТНОЙ СВЯЗЬЮ"},
             {"level": "h2", "text": "Для кого"},
-            {"level": "h2", "text": "Система привлечения горячего спроса"},
-            {"level": "h3", "text": "Лидогенерация B2B под ключ"},
+            {"level": "h2", "text": "КТО ЗА ЭТИМ СТОИТ"},
+            {"level": "h2", "text": "4 проблемы — 4 решения"},
+            {"level": "h3", "text": "Решение: Система привлечения горячего спроса"},
+            {"level": "h3", "text": "Решение: Система возврата упущенных сделок"},
+            {"level": "h3", "text": "Решение: Система управления прибылью"},
+            {"level": "h2", "text": "РЕЗУЛЬТАТЫ ПИЛОТОВ"},
         ],
         nav_labels=["Для кого", "Форматы старта", "Команда", "FAQ"],
         brand_hints=["Strateix", "Стратеикс"],
@@ -130,8 +134,12 @@ def check_brief_suggest_strateix() -> None:
     assert "для кого" not in qlow
     assert "продажа стратеикс" not in qlow
     assert "купить стратеикс" not in qlow
-    assert "strateix" not in qlow or "b2b" in qlow or "лидоген" in qlow
-    assert any(x in qlow for x in ("прибыл", "спрос", "лидоген", "b2b", "продаж"))
+    assert "кто за этим" not in qlow
+    assert "4 проблемы" not in qlow
+    assert "результаты пилотов" not in qlow
+    assert "завод " not in qlow
+    assert "решение:" not in qlow
+    assert any(x in qlow for x in ("спрос", "прибыл", "лидоген", "b2b", "аутсорсинг"))
     assert "strateix.ru" in r["excludeDomains"]
 
 

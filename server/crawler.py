@@ -25,6 +25,23 @@ PRIORITY_PATHS = (
     "/about-us",
 )
 
+_BRIEF_EXTRA_PATHS = (
+    "/uslugi",
+    "/services",
+    "/service",
+    "/catalog",
+    "/products",
+    "/produktsiya",
+    "/resheniya",
+    "/solutions",
+)
+
+_BRIEF_NAV_RE = re.compile(
+    r"(услуг|service|catalog|каталог|продукт|product|решени|solution|о\s*компан|about|"
+    r"направлен|деятельност|поставк|аренд|производств|оборудован|техник)",
+    re.IGNORECASE,
+)
+
 _CONTACT_PATHS = ("/contacts", "/contact", "/kontakty", "/kontakt")
 
 _PATH_HINT_RE = re.compile(
@@ -252,18 +269,33 @@ def domain_from_crawl(final_url: str, fallback: str) -> str:
 
 
 async def analyze_site_homepage(site_url: str) -> dict:
-    """Быстрый разбор только главной — для автозаполнения брифа (без обхода контактов)."""
-    from server.fetcher import fetch_page
+    """Быстрый разбор только главной — устаревший путь, см. analyze_site_for_brief."""
+    return await analyze_site_for_brief(site_url)
 
-    root = normalize_url(site_url)
-    if not root:
-        return {"ok": False, "error": "Некорректный URL"}
-    html, final_url, code, method = await fetch_page(root, use_proxy=False, delay_ms=0)
-    if not html or code >= 400:
-        return {"ok": False, "error": method or f"Сайт недоступен ({code or 'нет ответа'})"}
+
+def _parse_page_content(html: str) -> dict:
+    import json as _json
+
     soup = BeautifulSoup(html, "html.parser")
-    title = _title_from_html(html)
-    text = soup.get_text("\n", strip=True)[:8000]
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    text = soup.get_text("\n", strip=True)
+    headings: list[dict[str, str]] = []
+    for tag in soup.find_all(["h1", "h2", "h3"]):
+        line = tag.get_text(" ", strip=True)
+        if line:
+            headings.append({"level": tag.name, "text": line})
+
+    list_items: list[str] = []
+    for block in soup.find_all(["main", "article", "section", "div"], limit=40):
+        cls = " ".join(block.get("class") or []).lower()
+        if any(x in cls for x in ("nav", "menu", "footer", "header", "cookie", "modal")):
+            continue
+        for li in block.find_all("li", limit=30):
+            line = li.get_text(" ", strip=True)
+            if 10 <= len(line) <= 90:
+                list_items.append(line)
 
     meta_description = ""
     for sel in (
@@ -276,12 +308,42 @@ async def analyze_site_homepage(site_url: str) -> dict:
             meta_description = tag["content"].strip()
             break
 
-    headings: list[dict[str, str]] = []
-    for tag in soup.find_all(["h1", "h2", "h3"]):
-        line = tag.get_text(" ", strip=True)
-        if line:
-            headings.append({"level": tag.name, "text": line})
+    schema_offerings: list[str] = []
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw = script.string or script.get_text() or ""
+        if not raw.strip():
+            continue
+        try:
+            data = _json.loads(raw)
+        except Exception:
+            continue
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("@type") in ("Service", "Product", "Offer"):
+                name = item.get("name")
+                if isinstance(name, str) and name.strip():
+                    schema_offerings.append(name.strip())
+            graph = item.get("@graph")
+            if isinstance(graph, list):
+                for node in graph:
+                    if isinstance(node, dict) and node.get("@type") in ("Service", "Product"):
+                        name = node.get("name")
+                        if isinstance(name, str) and name.strip():
+                            schema_offerings.append(name.strip())
 
+    return {
+        "text": text[:5000],
+        "headings": headings[:30],
+        "list_items": list_items[:40],
+        "meta_description": meta_description[:500],
+        "schema_offerings": schema_offerings[:15],
+    }
+
+
+def _extract_brief_meta(soup: BeautifulSoup, html: str) -> dict:
+    title = _title_from_html(html)
     nav_labels: list[str] = []
     for block in soup.find_all(["nav", "header"])[:4]:
         for a in block.find_all("a", limit=40):
@@ -334,16 +396,95 @@ async def analyze_site_homepage(site_url: str) -> dict:
                     org_names.append(legal.strip())
 
     return {
-        "ok": True,
-        "site_url": normalize_url(final_url) or root,
         "title": title,
-        "text_sample": text[:4000],
-        "meta_description": meta_description[:500],
-        "headings": headings[:40],
         "nav_labels": nav_labels[:30],
         "footer_text": footer_text,
         "brand_hints": brand_hints[:20],
         "org_names": org_names[:5],
+    }
+
+
+def _brief_extra_urls(soup: BeautifulSoup, base_url: str, root_host: str) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+    base_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
+
+    for path in _BRIEF_EXTRA_PATHS:
+        url = normalize_url(path, base_origin)
+        if url and url not in seen:
+            seen.add(url)
+            found.append(url)
+
+    for a in soup.find_all("a", href=True):
+        href = normalize_url(a.get("href") or "", base_url)
+        if not href or not _same_host(href, root_host) or href in seen:
+            continue
+        label = a.get_text(" ", strip=True).lower()
+        path = urlparse(href).path.lower()
+        if _BRIEF_NAV_RE.search(label) or _BRIEF_NAV_RE.search(path):
+            seen.add(href)
+            found.append(href)
+        if len(found) >= 5:
+            break
+    return found[:4]
+
+
+async def analyze_site_for_brief(site_url: str) -> dict:
+    """Опрос сайта для брифа: главная + до 4 страниц (услуги, о компании)."""
+    from server.fetcher import fetch_page
+
+    root = normalize_url(site_url)
+    if not root:
+        return {"ok": False, "error": "Некорректный URL"}
+    html, final_url, code, method = await fetch_page(root, use_proxy=False, delay_ms=0)
+    if not html or code >= 400:
+        return {"ok": False, "error": method or f"Сайт недоступен ({code or 'нет ответа'})"}
+
+    soup = BeautifulSoup(html, "html.parser")
+    meta = _extract_brief_meta(soup, html)
+    home = _parse_page_content(html)
+    root_host = urlparse(final_url or root).netloc.lower().lstrip("www.")
+
+    pages_text: list[str] = [home["text"]]
+    all_headings = list(home["headings"])
+    all_list_items = list(home["list_items"])
+    all_schema = list(home["schema_offerings"])
+    meta_description = home["meta_description"]
+
+    extra_urls = _brief_extra_urls(soup, final_url or root, root_host)
+    pages_ok = 1
+    for url in extra_urls:
+        try:
+            page_html, _, page_code, _ = await fetch_page(url, use_proxy=False, delay_ms=200)
+        except Exception:
+            continue
+        if not page_html or page_code >= 400:
+            continue
+        parsed = _parse_page_content(page_html)
+        pages_text.append(parsed["text"])
+        all_headings.extend(parsed["headings"])
+        all_list_items.extend(parsed["list_items"])
+        all_schema.extend(parsed["schema_offerings"])
+        if not meta_description and parsed["meta_description"]:
+            meta_description = parsed["meta_description"]
+        pages_ok += 1
+
+    body_text = "\n".join(pages_text)[:12000]
+
+    return {
+        "ok": True,
+        "site_url": normalize_url(final_url) or root,
+        "title": meta["title"],
+        "text_sample": body_text[:8000],
+        "meta_description": meta_description[:500],
+        "headings": all_headings[:60],
+        "nav_labels": meta["nav_labels"],
+        "footer_text": meta["footer_text"],
+        "brand_hints": meta["brand_hints"],
+        "org_names": meta["org_names"],
+        "list_items": all_list_items[:60],
+        "schema_offerings": all_schema[:20],
+        "pages_surveyed": pages_ok,
     }
 
 

@@ -24,8 +24,8 @@ from server.config import (
 )
 from server.phones import normalize_digits
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
-from server.brief_suggest import suggest_brief_from_analysis
-from server.crawler import analyze_client_site, analyze_site_homepage, normalize_url
+from server.crawler import analyze_client_site, analyze_site_for_brief, normalize_url
+from server.site_survey import SiteSurveyData, suggest_from_survey
 from server.db import db
 from server.pipeline import (
     _can_resume_run,
@@ -146,24 +146,28 @@ async def preview_site(url: str = Query(..., min_length=4)):
 
 @app.get("/api/brief/suggest")
 async def suggest_brief(url: str = Query(..., min_length=4)):
-    """Разбор сайта: ниша, запросы для Яндекса, исключения. Регионы — вручную."""
+    """Опрос сайта (несколько страниц): ниша, запросы, исключения. Регионы — вручную."""
     normalized = normalize_client_site(url)
     if not normalized:
         raise HTTPException(400, "Укажите корректный URL сайта")
-    data = await analyze_site_homepage(normalized)
+    data = await analyze_site_for_brief(normalized)
     if not data.get("ok"):
         raise HTTPException(400, data.get("error") or "Не удалось открыть сайт")
-    payload = suggest_brief_from_analysis(
+    survey_data = SiteSurveyData(
         site_url=data.get("site_url") or normalized,
         title=data.get("title") or "",
-        text_sample=data.get("text_sample") or "",
         meta_description=data.get("meta_description") or "",
         headings=data.get("headings") or [],
         nav_labels=data.get("nav_labels") or [],
         footer_text=data.get("footer_text") or "",
         brand_hints=data.get("brand_hints") or [],
         org_names=data.get("org_names") or [],
+        body_text=data.get("text_sample") or "",
+        list_items=data.get("list_items") or [],
+        schema_offerings=data.get("schema_offerings") or [],
+        pages_surveyed=int(data.get("pages_surveyed") or 1),
     )
+    payload = suggest_from_survey(survey_data)
     return {"ok": True, **payload}
 
 

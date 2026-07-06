@@ -73,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-06-brief-brand-filter";
+  const EXPECTED_BUILD_VERSION = "2026-07-06-site-survey";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -1236,11 +1236,11 @@
 
     suggestBriefInFlight = true;
     const started = Date.now();
-    setSuggestUi(true, "Опрос сайта и заполнение брифа…");
+    setSuggestUi(true, "Опрос сайта: главная и разделы услуг…");
 
     suggestBriefTimer = setInterval(() => {
       const sec = Math.floor((Date.now() - started) / 1000);
-      setSuggestUi(true, `Опрос сайта и заполнение брифа… ${sec} сек`);
+      setSuggestUi(true, `Опрос сайта: главная и разделы… ${sec} сек`);
     }, 500);
 
     const hint = $("#niche-hint");
@@ -1272,9 +1272,11 @@
       brief = readForm();
       window.SSStorage.saveBrief(brief);
       updateRunUI();
-      const doneMsg = data.title
-        ? `Готово · ${data.title}`
-        : "Ниша, запросы и исключения подставлены · регионы укажите вручную";
+      const doneMsg = data.survey
+        ? `Опрос ${data.survey.pages} стр. · ${data.survey.businessModel || "ниша"} · ${data.title || "готово"}`
+        : data.title
+          ? `Готово · ${data.title}`
+          : "Ниша, запросы и исключения подставлены · регионы укажите вручную";
       if (hint) hint.textContent = doneMsg;
       toast("Бриф заполнен по сайту · регионы — вручную");
     } catch (e) {

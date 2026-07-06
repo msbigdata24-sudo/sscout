@@ -31,18 +31,32 @@ _GEO_CITIES = (
     ("новосибирск", "Новосибирск"),
 )
 
-# UI-мусор в заголовках и меню
+# UI-мусор: точное совпадение или фрагмент внутри фразы
 _SKIP_PHRASE = re.compile(
     r"^(главная|каталог|контакты|о компании|о нас|услуги|портфолио|производство|"
     r"новости|статьи|акции|проекты|скачать|отзывы|доставка|оплата|ещё|меню|"
     r"подробнее|узнать стоимость|оставить заявку|заказать|получить консультацию|"
     r"заказать звонок|отправить|согласен|принимаю|загрузка|все права|copyright|"
     r"сертификат|лицензи|реализованн.*проект|"
-    r"для кого|кто за этим|форматы старта|физика прибыли|технологии|взаимодействие|"
-    r"команда|faq|решение|проблема|связаться|новости|результаты|"
+    r"для кого|кто за этим стоит|форматы старта|физика прибыли|технологии|взаимодействие|"
+    r"команда|faq|связаться|результаты пилотов|"
     r"\d{1,3}\s*м²|\d+$|0\d$)$",
     re.IGNORECASE,
 )
+
+_SECTION_JUNK_RE = re.compile(
+    r"(кто за этим|"
+    r"\d+\s*проблем.*\d+\s*реш|"
+    r"результат.*пилот|"
+    r"^решение\s*:|^проблема\s*:|"
+    r"система прибыли\s*:\s*\d+|"
+    r":\s*\d+\s*этап|"
+    r"^\d+\s*проблем|"
+    r"^\d+\s*этап)",
+    re.IGNORECASE,
+)
+
+_LABEL_PREFIX_RE = re.compile(r"^(?:решение|проблема|этап)\s*:\s*", re.IGNORECASE)
 
 # Фраза похожа на услугу/нишу, а не на слоган бренда
 _SERVICE_HINTS = (
@@ -51,8 +65,20 @@ _SERVICE_HINTS = (
     "лидоген", "продаж", "b2b", "маркетинг", "клиент", "воронк", "спрос",
     "прибыл", "консалт", "аутсорс", "crm", "лид", "обзвон", "выручк",
     "машин", "станк", "спецодеж", "кровл", "фасад", "дистриб",
-    "усилен", "углеволок", "армирован", "пилот", "aeo", "jtbd",
+    "усилен", "углеволок", "армирован", "aeo", "jtbd",
 )
+
+_QUERY_STARTERS = (
+    "аренда", "продаж", "купить", "строитель", "монтаж", "лидоген", "систем",
+    "управлен", "привлечен", "аутсорс", "консалт", "маркетинг", "обслужив",
+    "изготовлен", "доставк", "ремонт", "проектирован", "обследован", "каркас",
+    "опалуб", "ангар", "дом ", "усилен",
+)
+
+_BAD_QUERY_START = frozenset({
+    "производство", "завод", "результат", "результаты", "спроса", "решение",
+    "проблема", "этап", "этапы", "пилот", "пилоты", "команда", "технологии",
+})
 
 _PROMO_RE = re.compile(
     r"акци[!]|скидк|%|специальн.*цен|оформлении.*месяц|б/у\s|рассрочк",
@@ -131,9 +157,36 @@ def _has_service_semantics(phrase: str) -> bool:
     return len(words) >= 2
 
 
+def _looks_like_search_query(phrase: str) -> bool:
+    low = phrase.lower().strip()
+    words = low.split()
+    if len(words) < 2:
+        return False
+    if words[0] in _BAD_QUERY_START:
+        return False
+    if any(low.startswith(s) for s in _QUERY_STARTERS):
+        return True
+    return len(words) >= 3 and _has_service_semantics(low)
+
+
+def _is_section_junk(phrase: str) -> bool:
+    low = phrase.lower().strip()
+    if _SECTION_JUNK_RE.search(low):
+        return True
+    if _is_mostly_caps(phrase) and len(phrase) >= 10:
+        return True
+    words = low.split()
+    if len(words) <= 4 and any(w in low for w in ("результат", "пилот", "этап", "проблем")):
+        if not any(h in low for h in ("лидоген", "b2b", "прибыл", "спрос", "продаж", "маркетинг")):
+            return True
+    return False
+
+
 def _is_query_worthy(raw: str, brand_tokens: set[str]) -> bool:
     p = _clean_phrase(raw)
     if not p:
+        return False
+    if _is_section_junk(p):
         return False
     if _is_mostly_caps(p) and len(p) > 18:
         return False
@@ -159,10 +212,13 @@ def _domain_from_url(url: str) -> str:
 
 def _clean_phrase(raw: str) -> str:
     s = re.sub(r"\s+", " ", (raw or "").strip())
+    s = _LABEL_PREFIX_RE.sub("", s)
     s = s.strip("·|-—–:;,.")
     if len(s) < 4 or len(s) > 90:
         return ""
     if _SKIP_PHRASE.match(s):
+        return ""
+    if _SECTION_JUNK_RE.search(s):
         return ""
     if _PROMO_RE.search(s):
         return ""
@@ -328,7 +384,8 @@ def _collect_topics(
         if any(w in phrase for w in _STOP_WORDS):
             continue
         if 14 <= len(phrase) <= 55:
-            add(phrase)
+            if _looks_like_search_query(phrase):
+                add(phrase)
 
     return out[:20]
 
@@ -375,10 +432,14 @@ def _expand_queries(topics: list[str], body_low: str, brand_tokens: set[str]) ->
     site_commerce = _site_sells_goods(body_low)
     for topic in topics[:12]:
         add(topic)
+        if not site_commerce:
+            continue
         if len(topic) > 38 or "," in topic:
             continue
         core = _topic_core(topic)
         if not core or len(core) > 40:
+            continue
+        if _is_section_junk(core):
             continue
         if not _has_service_semantics(core):
             continue
@@ -396,7 +457,7 @@ def _expand_queries(topics: list[str], body_low: str, brand_tokens: set[str]) ->
                 add(tpl.format(core))
             break
 
-    if "под ключ" in body_low:
+    if site_commerce and "под ключ" in body_low:
         for topic in topics[:5]:
             if len(topic) > 45:
                 continue
@@ -506,51 +567,24 @@ def suggest_brief_from_analysis(
     footer_text: str = "",
     brand_hints: list[str] | None = None,
     org_names: list[str] | None = None,
+    list_items: list[str] | None = None,
+    schema_offerings: list[str] | None = None,
 ) -> dict:
-    text = text_sample or ""
-    headings = headings or []
-    nav_labels = nav_labels or []
-    client_domain = _domain_from_url(site_url)
-    brand_tokens = _brand_tokens(site_url, title, brand_hints, org_names)
+    """Обёртка для тестов и обратной совместимости — делегирует в site_survey."""
+    from server.site_survey import SiteSurveyData, suggest_from_survey
 
-    topics = _collect_topics(
+    data = SiteSurveyData(
+        site_url=site_url,
         title=title,
         meta_description=meta_description,
-        headings=headings,
-        nav_labels=nav_labels,
-        text=text,
-        brand_tokens=brand_tokens,
+        headings=headings or [],
+        nav_labels=nav_labels or [],
+        footer_text=footer_text,
+        brand_hints=brand_hints or [],
+        org_names=org_names or [],
+        body_text=text_sample or "",
+        list_items=list_items or [],
+        schema_offerings=schema_offerings or [],
+        pages_surveyed=1,
     )
-    niche = _build_niche(
-        title=title,
-        meta_description=meta_description,
-        headings=headings,
-        topics=topics,
-    )
-    if not niche and text:
-        niche = re.sub(r"\s+", " ", text[:220]).strip()
-
-    queries = _build_queries(
-        title=title,
-        meta_description=meta_description,
-        headings=headings,
-        nav_labels=nav_labels,
-        text=text,
-        brand_tokens=brand_tokens,
-    )
-
-    return {
-        "clientSite": site_url,
-        "clientName": _extract_company_name(
-            title,
-            text,
-            footer_text=footer_text,
-            brand_hints=brand_hints,
-            org_names=org_names,
-        ),
-        "niche": niche[:300],
-        "queries": "\n".join(queries),
-        "excludeDomains": _build_exclude(client_domain),
-        "title": title or "",
-        "source": "homepage",
-    }
+    return suggest_from_survey(data)
