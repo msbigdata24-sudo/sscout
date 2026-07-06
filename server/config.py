@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-06-site-survey"
+BUILD_VERSION = "2026-07-06-serp-coverage"
 
 MAX_EXPORT_PHONES = 6
 
@@ -30,8 +30,9 @@ SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "45")))
 SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "90")))
 SERP_TIMEOUT = max(30, int(os.getenv("SERP_TIMEOUT", "90")))
 FETCH_RETRIES = max(1, min(5, int(os.getenv("FETCH_RETRIES", "3"))))
-SERP_PAGES = max(1, min(4, int(os.getenv("SERP_PAGES", "2"))))
+SERP_PAGES = max(1, min(10, int(os.getenv("SERP_PAGES", "4"))))
 DEFAULT_MAX_SITES = 50
+SERP_MAX_RESULTS_PER_QUERY = max(50, int(os.getenv("SERP_MAX_RESULTS_PER_QUERY", "100")))
 DB_PATH = ROOT / "data" / "signal_scout.db"
 
 # Проверенные конкуренты Опалубки — для быстрого теста обхода без XMLRiver

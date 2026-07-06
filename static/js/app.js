@@ -73,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-06-site-survey";
+  const EXPECTED_BUILD_VERSION = "2026-07-06-serp-coverage";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();

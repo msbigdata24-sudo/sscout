@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from server.config import BUILD_VERSION, MAX_EXPORT_PHONES
-from server.filters import region_matches
+from server.filters import region_matches, serp_hit_relevant, serp_passes_region_filter
 from server.main import normalize_client_site, _phones_for_export
 
 
@@ -40,6 +40,53 @@ def check_region_exclude() -> None:
     assert region_matches("компания в казани", ["московская область"], "exclude") is True
     assert region_matches("компания в московской области", ["московская область"], "exclude") is False
     assert region_matches("склад в московской области", ["московская область"], "include") is True
+
+
+def check_serp_filters() -> None:
+    meta_moscow = {
+        "domain": "salecraft.ru",
+        "title": "Построение отдела продаж под ключ в Москве",
+        "snippet": "Аутсорсинг продаж для B2B",
+        "queries": ["аутсорсинг отдела продаж"],
+    }
+    meta_news = {
+        "domain": "tver.mk.ru",
+        "title": "Новости Твери",
+        "snippet": "Городские новости",
+        "queries": ["лидогенерация B2B"],
+    }
+    meta_opalubka = {
+        "domain": "opennet.ru",
+        "title": "Форум",
+        "snippet": "обсуждение Linux",
+        "queries": ["аренда опалубки"],
+    }
+    queries_b2b = ["лидогенерация B2B", "аутсорсинг отдела продаж"]
+    queries_opalubka = ["аренда опалубки Москва"]
+
+    assert serp_hit_relevant(meta_moscow, queries_b2b, "B2B услуги") is True
+    assert serp_hit_relevant(meta_news, queries_b2b, "") is False
+    assert serp_hit_relevant(meta_opalubka, queries_opalubka, "опалубка") is False
+
+    # Режим «включить регионы» не режет на этапе SERP
+    meta_no_region = {
+        "title": "Лидогенерация для бизнеса",
+        "snippet": "Работаем по всей России",
+        "queries": ["лидогенерация"],
+    }
+    assert serp_passes_region_filter(
+        meta_no_region, ["алтайский край", "амурская область"], "include"
+    ) is True
+    assert serp_passes_region_filter(
+        {"title": "Компания в Казани", "snippet": "", "queries": []},
+        ["московская область"],
+        "exclude",
+    ) is True
+    assert serp_passes_region_filter(
+        {"title": "Склад в Московской области", "snippet": "", "queries": []},
+        ["московская область"],
+        "exclude",
+    ) is False
 
 
 def check_export_phones() -> None:
@@ -147,6 +194,7 @@ def main() -> None:
     check_js_constants()
     check_client_site_urls()
     check_region_exclude()
+    check_serp_filters()
     check_export_phones()
     check_export_filename()
     check_brief_suggest_frameclub()

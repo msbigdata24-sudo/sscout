@@ -9,6 +9,33 @@ from server.config import AGGREGATOR_DOMAINS, CATALOG_DOMAINS, HTTP_TIMEOUT, USE
 from server.phones import extract_phones, extract_phones_from_text
 
 _YEAR_2026_RE = re.compile(r"\b2026\b")
+_TOKEN_RE = re.compile(r"[а-яёa-z0-9]{4,}", re.IGNORECASE)
+
+# Инфо-сайты: пропускаем только если в сниппете есть корень ниши
+_INFO_DOMAINS = (
+    "habr.com", "vc.ru", "opennet.ru", "wikipedia.org", "tjournal.ru",
+    "reddit.com", "pikabu.ru", "lenta.ru", "rbc.ru",
+)
+
+# Региональные СМИ в выдаче по коммерческим запросам
+_MEDIA_DOMAIN_RE = re.compile(
+    r"(^|\.)((mk|rg|news|gazeta|vesti|press)\.[a-z]{2,3}|"
+    r"73\.ru|66\.ru|59\.ru|161\.ru|e1\.ru|ngs\.ru)",
+    re.IGNORECASE,
+)
+
+# Синонимы для B2B / лидгена — одно слово в запросе → несколько в сниппете
+_QUERY_SYNONYMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("лидоген", ("лидоген", "лидген", "лиды", "лид ", "lead", "заявк", "спрос")),
+    ("лидген", ("лидоген", "лидген", "лиды", "заявк")),
+    ("b2b", ("b2b", "бизнес", "компан", "корпорат")),
+    ("колл", ("колл", "call", "обзвон", "телемарк", "контакт-центр", "контакт центр")),
+    ("обзвон", ("обзвон", "колл", "call", "телемарк")),
+    ("аутсорс", ("аутсорс", "аутстафф", "удаленн", "удалённ")),
+    ("продаж", ("продаж", "sales", "отдел продаж", "коммерч")),
+    ("маркетинг", ("маркетинг", "продвижен", "реклам", "агентств")),
+    ("опалуб", ("опалуб", "опалубк")),
+)
 
 
 def parse_domain_list(raw: str) -> set[str]:
@@ -36,49 +63,77 @@ def is_aggregator(domain: str) -> bool:
         agg_clean = agg[4:] if agg.startswith("www.") else agg
         if d == agg_clean or d.endswith("." + agg_clean):
             return True
-    # Сервисы Google: support.google.com, accounts.google.com …
     if ".google." in d or d.endswith(".google.com"):
         return True
     return False
 
 
-_TOKEN_RE = re.compile(r"[а-яёa-z]{4,}", re.IGNORECASE)
-
-
 def _niche_stems(queries: list[str], niche: str) -> list[str]:
-    """Корни ключевых слов ниши — по ним отсекаем мусор вроде opennet.ru."""
     stems: set[str] = set()
+    stop = {
+        "аренда", "продажа", "москва", "область", "нижний", "новгород",
+        "ярославль", "владимир", "щелково", "склад", "крупнощитовая",
+        "мелкощитовая", "перекрытия", "колонны", "система", "услуги",
+        "компания", "бизнеса", "под ключ",
+    }
     for text in queries + ([niche] if niche else []):
         low = (text or "").lower()
         if "опалуб" in low:
             stems.add("опалуб")
         for token in _TOKEN_RE.findall(low):
-            if len(token) >= 5 and token not in {
-                "аренда", "продажа", "москва", "область", "нижний", "новгород",
-                "ярославль", "владимир", "щелково", "склад", "крупнощитовая",
-                "мелкощитовая", "перекрытия", "колонны",
-            }:
+            if len(token) >= 4 and token not in stop:
                 stems.add(token[:6] if len(token) > 6 else token)
-    if not stems:
-        for text in queries + ([niche] if niche else []):
-            for token in _TOKEN_RE.findall(text or ""):
-                if len(token) >= 5:
-                    stems.add(token[:5])
     return sorted(stems)
 
 
+def _synonym_match(query_low: str, blob: str) -> bool:
+    for needle, variants in _QUERY_SYNONYMS:
+        if needle in query_low:
+            if any(v in blob for v in variants):
+                return True
+    return False
+
+
+def _query_words_match(query: str, blob: str) -> bool:
+    q_low = (query or "").lower()
+    words = [w for w in _TOKEN_RE.findall(q_low) if len(w) >= 4]
+    if not words:
+        return True
+    hits = sum(1 for w in words if w in blob or w[:5] in blob)
+    if hits >= 1:
+        return True
+    return _synonym_match(q_low, blob)
+
+
 def serp_hit_relevant(meta: dict, queries: list[str], niche: str) -> bool:
-    """Сниппет/домен должны содержать корень ниши (опалуб…), иначе это мусор из выдачи."""
+    """Мягкая проверка: доверяем выдаче Яндекса, режем только инфо/СМИ без темы."""
     title = str(meta.get("title") or "")
     snippet = str(meta.get("snippet") or "")
     domain = str(meta.get("domain") or "").lower()
-    text_blob = f"{title} {snippet}".lower()
+    blob = f"{title} {snippet} {domain}".lower()
+
+    hit_queries = meta.get("queries") or []
+    if isinstance(hit_queries, set):
+        hit_queries = sorted(hit_queries)
+    for q in hit_queries:
+        if _query_words_match(str(q), blob):
+            return True
+
+    for q in queries:
+        if _query_words_match(q, blob):
+            return True
 
     stems = _niche_stems(queries, niche)
-    for stem in stems:
-        if stem in text_blob or stem in domain:
-            return True
-    return False
+    if stems and any(s in blob for s in stems):
+        return True
+
+    if any(d in domain for d in _INFO_DOMAINS):
+        return False
+    if _MEDIA_DOMAIN_RE.search(domain):
+        return False
+
+    # Коммерческий домен из выдачи по запросу — оставляем (Яндекс уже отфильтровал)
+    return bool(queries or niche)
 
 
 def is_catalog_domain(domain: str) -> bool:
@@ -102,6 +157,17 @@ def region_matches(text: str, regions: list[str], mode: str) -> bool:
     if mode == "include":
         return hits > 0
     return hits == 0
+
+
+def serp_passes_region_filter(
+    meta: dict,
+    regions: list[str],
+    region_mode: str,
+) -> bool:
+    """На этапе SERP регион режет только в режиме «исключить»."""
+    if not regions or region_mode != "exclude":
+        return True
+    return region_matches(serp_meta_region_text(meta), regions, "exclude")
 
 
 def _region_in_text(hay: str, region: str) -> bool:

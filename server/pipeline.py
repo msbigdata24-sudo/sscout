@@ -11,6 +11,7 @@ from server.config import (
     DEFAULT_PILOT_QUERIES,
     PHONES_OVERFLOW_THRESHOLD,
     PILOT_SEED_DOMAINS,
+    SERP_MAX_RESULTS_PER_QUERY,
     SERP_PAGES,
     SITE_CRAWL_TIMEOUT,
 )
@@ -22,9 +23,8 @@ from server.filters import (
     is_catalog_domain,
     parse_domain_list,
     parse_regions,
-    region_matches,
+    serp_passes_region_filter,
     serp_hit_relevant,
-    serp_meta_region_text,
     try_catalog_page,
 )
 from server.phones import domain_from_url, pick_phones_enriched, pick_phones_list, validate_phone
@@ -299,8 +299,14 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                 status="info",
             )
         elif regions and region_mode == "include":
-            _log(pipeline, f"Регионы: только {len(regions)} перечисленных в брифе", status="info")
+            _log(
+                pipeline,
+                f"Регионы (включить): {len(regions)} — влияют на выдачу Яндекса, "
+                "не отсекают сайты без региона в сниппете",
+                status="info",
+            )
         max_sites = max(10, min(200, int(brief.get("maxSites") or DEFAULT_MAX_SITES)))
+        serp_cap = max(SERP_MAX_RESULTS_PER_QUERY, max_sites * 3)
         crawl_depth = max(1, min(5, int(brief.get("crawlDepth") or 2)))
         delay_ms = max(0, min(5000, int(brief.get("requestDelayMs") or 500)))
         use_proxy = bool(brief.get("useProxy"))
@@ -375,7 +381,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                     xmlriver_user=xr_user,
                     xmlriver_key=xr_key,
                     regions_text=serp_regions_text,
-                    max_results=max(50, max_sites * 4),
+                    max_results=serp_cap,
                 )
                 for hit in serp_hits:
                     if is_catalog_domain(hit["domain"]):
@@ -449,7 +455,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                         xmlriver_user=xr_user,
                         xmlriver_key=xr_key,
                         regions_text=serp_regions_text,
-                        max_results=max(50, max_sites * 4),
+                        max_results=serp_cap,
                     )
                     for hit in serp_hits:
                         if is_catalog_domain(hit["domain"]):
@@ -466,9 +472,7 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                     if status in ("исключён", "агрегатор"):
                         excluded_count += 1
                         continue
-                    if regions and not region_matches(
-                        serp_meta_region_text(meta), regions, region_mode
-                    ):
+                    if not serp_passes_region_filter(meta, regions, region_mode):
                         region_skipped += 1
                         continue
                     if not serp_hit_relevant(meta, queries, brief.get("niche", "")):
@@ -712,11 +716,7 @@ def _detect_region(cand: dict) -> str:
 def _offer_line(cand: dict, regions: list[str], *, region_mode: str = "include") -> str:
     snippet = (cand.get("snippet") or "")[:160]
     engines = "/".join(cand.get("engines") or [])
-    base = snippet or f"Выдача {engines}"
-    if region_mode == "include" and regions:
-        reg = ", ".join(regions[:2])
-        return f"{base}; {reg}"[:200]
-    return base[:200]
+    return (snippet or f"Выдача {engines}")[:200]
 
 
 def _dedupe_rows(rows: list[dict]) -> list[dict]:
