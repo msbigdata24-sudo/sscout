@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-06-filter-parallel"
+BUILD_VERSION = "2026-07-06-remove-demo-badge"
 
 MAX_EXPORT_PHONES = 6
 
@@ -80,6 +80,19 @@ AGGREGATOR_DOMAINS = frozenset({
     "zen.yandex.ru", "dzen.ru", "dzen.ru",
     "facebook.com", "instagram.com", "ok.ru", "mail.ru",
     "ozon.ru", "wildberries.ru", "market.yandex.ru",
+})
+
+# СМИ, банки, вузы, справочники, SaaS — не конкуренты в B2B-нише
+JUNK_RESULT_DOMAINS = frozenset({
+    "klerk.ru", "vc.ru", "habr.com", "dtf.ru", "cyberleninka.ru", "cossa.ru",
+    "lifehacker.ru", "sberbank.ru", "tbank.ru", "banki.ru", "consultant.ru",
+    "kontur.ru", "bitrix24.ru", "moedelo.org", "sbercrm.com", "envybox.io",
+    "advantshop.net", "aspro.cloud", "aspro.ru", "vtiger.com", "jaycopilot.com",
+    "allo.tochka.com", "kdelu.vtb.ru", "journal.sovcombank.ru", "zakonrf.info",
+    "advgazeta.ru", "kp.ru", "business.ru", "upr.ru", "assistentus.ru",
+    "audit-it.ru", "kpfu.ru", "kubsu.ru", "lib.rosdiplom.ru", "elib.utmn.ru",
+    "imi-samara.ru", "advertisingforum.ru", "tjournal.ru", "pikabu.ru",
+    "lenta.ru", "rbc.ru", "mk.ru", "ria.ru", "interfax.ru",
 })
 
 CATALOG_DOMAINS = frozenset({

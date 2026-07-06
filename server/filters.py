@@ -5,7 +5,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from server.config import AGGREGATOR_DOMAINS, CATALOG_DOMAINS, HTTP_TIMEOUT, USER_AGENT
+from server.config import (
+    AGGREGATOR_DOMAINS,
+    CATALOG_DOMAINS,
+    HTTP_TIMEOUT,
+    JUNK_RESULT_DOMAINS,
+    USER_AGENT,
+)
 from server.phones import extract_phones, extract_phones_from_text
 
 _YEAR_2026_RE = re.compile(r"\b2026\b")
@@ -22,6 +28,27 @@ _MEDIA_DOMAIN_RE = re.compile(
     r"(^|\.)((mk|rg|news|gazeta|vesti|press)\.[a-z]{2,3}|"
     r"73\.ru|66\.ru|59\.ru|161\.ru|e1\.ru|ngs\.ru)",
     re.IGNORECASE,
+)
+
+_EDU_DOMAIN_RE = re.compile(
+    r"(\.edu\.|\.ac\.|univer|kpfu\.|kubsu\.|utmn\.|sfedu\.|hse\.ru|msu\.ru)",
+    re.IGNORECASE,
+)
+
+_ARTICLE_OR_REFERENCE_RE = re.compile(
+    r"(что такое|как рассчитать|как взыскать|статьи о|всё про|"
+    r"университет|репозитори|дипломн|курсовых|научн.*стат|киберленинка|"
+    r"законодательств|консультантплюс|национальный рекламный форум|"
+    r"портал банка|журнал для|лайфхакер|игры, кино|публикации /|"
+    r"адвокатская газета|арбитражная практика|бухгалтерский учет|"
+    r"финансовой грамотности|новости россии)",
+    re.IGNORECASE,
+)
+
+_COMMERCIAL_SIGNALS = (
+    "агентств", "аутсорс", "лидоген", "лидген", "отдел продаж", "колл-центр",
+    "колл центр", "телемарк", "обзвон", "генерац", " лид", "b2b", "под ключ",
+    "заказать", "услуг", "консалт", "аутрич", "холодн", "performance",
 )
 
 # Синонимы для B2B / лидгена — одно слово в запросе → несколько в сниппете
@@ -105,12 +132,38 @@ def _query_words_match(query: str, blob: str) -> bool:
     return _synonym_match(q_low, blob)
 
 
+def _has_commercial_intent(blob: str) -> bool:
+    return any(s in blob for s in _COMMERCIAL_SIGNALS)
+
+
+def is_junk_serp_result(domain: str, title: str = "", snippet: str = "") -> bool:
+    """СМИ, банки, вузы, статьи — не конкуренты Strateix и похожих B2B-ниш."""
+    d = (domain or "").lower().lstrip("www.")
+    if d in JUNK_RESULT_DOMAINS:
+        return True
+    if any(d == j or d.endswith("." + j) for j in JUNK_RESULT_DOMAINS):
+        return True
+    if _EDU_DOMAIN_RE.search(d):
+        return True
+    if any(x in d for x in _INFO_DOMAINS):
+        return True
+    if _MEDIA_DOMAIN_RE.search(d):
+        return True
+    blob = f"{title} {snippet}".lower()
+    if _ARTICLE_OR_REFERENCE_RE.search(blob):
+        return True
+    return False
+
+
 def serp_hit_relevant(meta: dict, queries: list[str], niche: str) -> bool:
-    """Мягкая проверка: доверяем выдаче Яндекса, режем только инфо/СМИ без темы."""
+    """Релевантность: не мусор + коммерческий смысл или совпадение с запросом."""
     title = str(meta.get("title") or "")
     snippet = str(meta.get("snippet") or "")
     domain = str(meta.get("domain") or "").lower()
     blob = f"{title} {snippet} {domain}".lower()
+
+    if is_junk_serp_result(domain, title, snippet):
+        return False
 
     hit_queries = meta.get("queries") or []
     if isinstance(hit_queries, set):
@@ -127,13 +180,10 @@ def serp_hit_relevant(meta: dict, queries: list[str], niche: str) -> bool:
     if stems and any(s in blob for s in stems):
         return True
 
-    if any(d in domain for d in _INFO_DOMAINS):
-        return False
-    if _MEDIA_DOMAIN_RE.search(domain):
-        return False
+    if _has_commercial_intent(blob):
+        return True
 
-    # Коммерческий домен из выдачи по запросу — оставляем (Яндекс уже отфильтровал)
-    return bool(queries or niche)
+    return False
 
 
 def is_catalog_domain(domain: str) -> bool:

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from server.config import BUILD_VERSION, MAX_EXPORT_PHONES
-from server.filters import region_matches, serp_hit_relevant, serp_passes_region_filter
+from server.filters import is_junk_serp_result, region_matches, serp_hit_relevant, serp_passes_region_filter
 from server.main import normalize_client_site, _phones_for_export
 
 
@@ -87,6 +87,19 @@ def check_serp_filters() -> None:
         ["московская область"],
         "exclude",
     ) is False
+
+    assert is_junk_serp_result("vc.ru", "vc.ru — стартапы", "") is True
+    assert is_junk_serp_result("salecraft.ru", "Отдел продаж под ключ", "") is False
+    assert serp_hit_relevant(
+        {"domain": "klerk.ru", "title": "Что такое упущенная выгода", "snippet": "", "queries": ["упущенная выгода"]},
+        ["упущенная выгода"],
+        "",
+    ) is False
+    assert serp_hit_relevant(
+        {"domain": "salecraft.ru", "title": "Отдел продаж под ключ Москва", "snippet": "аутсорсинг", "queries": ["отдел продаж под ключ"]},
+        ["отдел продаж под ключ"],
+        "",
+    ) is True
 
 
 def check_export_phones() -> None:

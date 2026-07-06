@@ -73,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-06-filter-parallel";
+  const EXPECTED_BUILD_VERSION = "2026-07-06-remove-demo-badge";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -580,7 +580,6 @@
       empty.hidden = false;
       wrap.hidden = true;
       $("#stats").hidden = true;
-      $("#demo-banner").hidden = true;
       $("#live-banner").hidden = true;
       $("#pagination").hidden = true;
       $("#pager").hidden = true;
@@ -589,7 +588,6 @@
 
     empty.hidden = true;
     wrap.hidden = false;
-    $("#demo-banner").hidden = true;
     $("#live-banner").hidden = !isLiveRun;
     renderStats(rows);
 
