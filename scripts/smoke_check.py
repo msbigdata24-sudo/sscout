@@ -105,6 +105,36 @@ def check_brief_suggest_opalubka() -> None:
     assert "opalubka-domstroy.ru" in r["excludeDomains"]
 
 
+def check_brief_suggest_strateix() -> None:
+    from server.brief_suggest import suggest_brief_from_analysis
+
+    r = suggest_brief_from_analysis(
+        site_url="https://strateix.ru/",
+        title="Стратеикс — архитектура прибыли",
+        text_sample=(
+            "Система управляемой прибыли для бизнеса B2B лидогенерация горячий спрос "
+            "отдел продаж воронка сигналы спроса пилот 30 дней"
+        ),
+        meta_description="Система управляемой прибыли для бизнеса от 50 млн выручки",
+        headings=[
+            {"level": "h1", "text": "СТРАТЕИКС (STRATEIX)"},
+            {"level": "h1", "text": "СТРАТЕИКС АРХИТЕКТУРА ПРИБЫЛИ С ОБРАТНОЙ СВЯЗЬЮ"},
+            {"level": "h2", "text": "Для кого"},
+            {"level": "h2", "text": "Система привлечения горячего спроса"},
+            {"level": "h3", "text": "Лидогенерация B2B под ключ"},
+        ],
+        nav_labels=["Для кого", "Форматы старта", "Команда", "FAQ"],
+        brand_hints=["Strateix", "Стратеикс"],
+    )
+    qlow = r["queries"].lower()
+    assert "для кого" not in qlow
+    assert "продажа стратеикс" not in qlow
+    assert "купить стратеикс" not in qlow
+    assert "strateix" not in qlow or "b2b" in qlow or "лидоген" in qlow
+    assert any(x in qlow for x in ("прибыл", "спрос", "лидоген", "b2b", "продаж"))
+    assert "strateix.ru" in r["excludeDomains"]
+
+
 def main() -> None:
     check_js_constants()
     check_client_site_urls()
@@ -113,6 +143,7 @@ def main() -> None:
     check_export_filename()
     check_brief_suggest_frameclub()
     check_brief_suggest_opalubka()
+    check_brief_suggest_strateix()
     print(f"OK smoke_check · BUILD_VERSION={BUILD_VERSION}")
 
 

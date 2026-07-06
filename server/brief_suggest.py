@@ -38,8 +38,20 @@ _SKIP_PHRASE = re.compile(
     r"подробнее|узнать стоимость|оставить заявку|заказать|получить консультацию|"
     r"заказать звонок|отправить|согласен|принимаю|загрузка|все права|copyright|"
     r"сертификат|лицензи|реализованн.*проект|"
+    r"для кого|кто за этим|форматы старта|физика прибыли|технологии|взаимодействие|"
+    r"команда|faq|решение|проблема|связаться|новости|результаты|"
     r"\d{1,3}\s*м²|\d+$|0\d$)$",
     re.IGNORECASE,
+)
+
+# Фраза похожа на услугу/нишу, а не на слоган бренда
+_SERVICE_HINTS = (
+    "аренда", "продаж", "опалуб", "каркас", "дом", "ангар", "строитель",
+    "монтаж", "производ", "оборудован", "металл", "бетон", "опт",
+    "лидоген", "продаж", "b2b", "маркетинг", "клиент", "воронк", "спрос",
+    "прибыл", "консалт", "аутсорс", "crm", "лид", "обзвон", "выручк",
+    "машин", "станк", "спецодеж", "кровл", "фасад", "дистриб",
+    "усилен", "углеволок", "армирован", "пилот", "aeo", "jtbd",
 )
 
 _PROMO_RE = re.compile(
@@ -73,6 +85,65 @@ _FOOTER_STOP = re.compile(
     r"\s*(политика|инн|огrn|оферт|конфиденциаль|пользовательск|©|copyright)\b",
     re.IGNORECASE,
 )
+
+
+def _brand_tokens(
+    site_url: str,
+    title: str,
+    brand_hints: list[str] | None,
+    org_names: list[str] | None,
+) -> set[str]:
+    tokens: set[str] = set()
+    host = _domain_from_url(site_url)
+    if host:
+        base = host.split(".")[0]
+        tokens.add(base.lower())
+        if len(base) > 4:
+            tokens.add(base[: max(4, len(base) - 2)].lower())
+    for raw in [title, *(brand_hints or []), *(org_names or [])]:
+        for word in re.findall(r"[a-zа-яё]{4,}", (raw or "").lower()):
+            tokens.add(word)
+    return {t for t in tokens if len(t) >= 4}
+
+
+def _is_mostly_caps(s: str) -> bool:
+    letters = [c for c in s if c.isalpha()]
+    if len(letters) < 6:
+        return False
+    upper = sum(1 for c in letters if c.isupper())
+    return upper / len(letters) > 0.65
+
+
+def _contains_brand(phrase: str, brand_tokens: set[str]) -> bool:
+    low = phrase.lower()
+    words = re.findall(r"[a-zа-яё0-9]+", low)
+    if not words:
+        return False
+    hits = sum(1 for w in words if w in brand_tokens or any(w in b or b in w for b in brand_tokens))
+    return hits >= max(1, len(words) // 2)
+
+
+def _has_service_semantics(phrase: str) -> bool:
+    low = phrase.lower()
+    if any(h in low for h in _SERVICE_HINTS):
+        return True
+    words = [w for w in re.findall(r"[а-яёa-z]{4,}", low) if w not in _STOP_WORDS]
+    return len(words) >= 2
+
+
+def _is_query_worthy(raw: str, brand_tokens: set[str]) -> bool:
+    p = _clean_phrase(raw)
+    if not p:
+        return False
+    if _is_mostly_caps(p) and len(p) > 18:
+        return False
+    if _contains_brand(p, brand_tokens) and not _has_service_semantics(p):
+        return False
+    if len(p.split()) == 1 and p.lower() in _STOP_WORDS:
+        return False
+    if not _has_service_semantics(p) and len(p) < 14:
+        return False
+    return True
 
 
 def _domain_from_url(url: str) -> str:
@@ -208,8 +279,9 @@ def _collect_topics(
     headings: list,
     nav_labels: list[str],
     text: str,
+    brand_tokens: set[str],
 ) -> list[str]:
-    """Кандидаты в запросы: сначала короткие h2/h3 (услуги), потом title и текст."""
+    """Кандидаты в запросы: h2/h3 с услугами, meta, текст — без бренда и слоганов."""
     out: list[str] = []
     seen: set[str] = set()
 
@@ -220,6 +292,8 @@ def _collect_topics(
                 for piece in raw.split(","):
                     add(piece.strip(), max_len=max_len)
             return
+        if not _is_query_worthy(p, brand_tokens):
+            return
         key = p.lower()
         if key in seen:
             return
@@ -228,33 +302,46 @@ def _collect_topics(
         if "," in p and 10 < len(p) < 55:
             for piece in p.split(","):
                 sub = _clean_phrase(piece.strip())
-                if sub and sub.lower() not in seen:
+                if sub and sub.lower() not in seen and _is_query_worthy(sub, brand_tokens):
                     seen.add(sub.lower())
                     out.append(sub)
 
     h1, h2, h3 = _headings_by_level(headings)
-    for h in h2 + h3 + h1:
+    for h in h2 + h3:
         add(h)
-    add(_title_topic(title), max_len=70)
+    for h in h1:
+        if _has_service_semantics(h) and not _contains_brand(h, brand_tokens):
+            add(h)
     if meta_description:
         for chunk in re.split(r"[.!?]\s+", meta_description):
             add(chunk, max_len=70)
-
-    for label in nav_labels:
-        add(label, max_len=50)
+    title_part = _title_topic(title)
+    if title_part and _is_query_worthy(title_part, brand_tokens):
+        add(title_part, max_len=70)
 
     low = text.lower()
     for m in re.finditer(
-        r"[а-яёa-z][а-яёa-z\-]{2,}(?:\s+[а-яёa-z][а-яёa-z\-]{2,}){1,2}",
+        r"[а-яёa-z][а-яёa-z\-]{2,}(?:\s+[а-яёa-z][а-яёa-z\-]{2,}){1,3}",
         low,
     ):
         phrase = m.group(0).strip()
         if any(w in phrase for w in _STOP_WORDS):
             continue
-        if 12 <= len(phrase) <= 55:
+        if 14 <= len(phrase) <= 55:
             add(phrase)
 
     return out[:20]
+
+
+def _site_sells_goods(body_low: str) -> bool:
+    """Сайт про товар/аренду — можно шаблоны «купить», «продажа»."""
+    return any(
+        p in body_low
+        for p in (
+            "аренда ", "купить ", "продажа ", "цена ", "каталог",
+            "в наличии", "доставк", "б/у ", "комплектующ",
+        )
+    )
 
 
 def _topic_core(topic: str) -> str:
@@ -269,7 +356,7 @@ def _topic_core(topic: str) -> str:
     return t.strip() or topic.lower()
 
 
-def _expand_queries(topics: list[str], body_low: str) -> list[str]:
+def _expand_queries(topics: list[str], body_low: str, brand_tokens: set[str]) -> list[str]:
     queries: list[str] = []
     seen: set[str] = set()
 
@@ -277,12 +364,15 @@ def _expand_queries(topics: list[str], body_low: str) -> list[str]:
         q = re.sub(r"\s+", " ", (q or "").strip())
         if len(q) < 4 or len(q) > 80:
             return
+        if not _is_query_worthy(q, brand_tokens):
+            return
         key = q.lower()
         if key in seen:
             return
         seen.add(key)
         queries.append(q)
 
+    site_commerce = _site_sells_goods(body_low)
     for topic in topics[:12]:
         add(topic)
         if len(topic) > 38 or "," in topic:
@@ -290,8 +380,14 @@ def _expand_queries(topics: list[str], body_low: str) -> list[str]:
         core = _topic_core(topic)
         if not core or len(core) > 40:
             continue
+        if not _has_service_semantics(core):
+            continue
+        if _contains_brand(core, brand_tokens):
+            continue
         topic_low = topic.lower()
         for marker, templates in _INTENT_MARKERS:
+            if marker in ("продаж", "купить") and not site_commerce:
+                continue
             if marker not in body_low:
                 continue
             if marker in topic_low:
@@ -305,8 +401,9 @@ def _expand_queries(topics: list[str], body_low: str) -> list[str]:
             if len(topic) > 45:
                 continue
             core = _topic_core(topic)
-            if core and len(core) <= 40:
-                add(f"{core} под ключ")
+            if core and len(core) <= 40 and _has_service_semantics(core):
+                if not _contains_brand(core, brand_tokens):
+                    add(f"{core} под ключ")
 
     return queries
 
@@ -353,6 +450,7 @@ def _build_queries(
     headings: list[str],
     nav_labels: list[str],
     text: str,
+    brand_tokens: set[str],
 ) -> list[str]:
     topics = _collect_topics(
         title=title,
@@ -360,9 +458,10 @@ def _build_queries(
         headings=headings,
         nav_labels=nav_labels,
         text=text,
+        brand_tokens=brand_tokens,
     )
     body_low = f"{title} {meta_description} {text}".lower()
-    queries = _expand_queries(topics, body_low)
+    queries = _expand_queries(topics, body_low, brand_tokens)
 
     geos = _detect_geo(text)
     if geos and queries:
@@ -412,6 +511,7 @@ def suggest_brief_from_analysis(
     headings = headings or []
     nav_labels = nav_labels or []
     client_domain = _domain_from_url(site_url)
+    brand_tokens = _brand_tokens(site_url, title, brand_hints, org_names)
 
     topics = _collect_topics(
         title=title,
@@ -419,6 +519,7 @@ def suggest_brief_from_analysis(
         headings=headings,
         nav_labels=nav_labels,
         text=text,
+        brand_tokens=brand_tokens,
     )
     niche = _build_niche(
         title=title,
@@ -435,6 +536,7 @@ def suggest_brief_from_analysis(
         headings=headings,
         nav_labels=nav_labels,
         text=text,
+        brand_tokens=brand_tokens,
     )
 
     return {
