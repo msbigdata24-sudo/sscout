@@ -116,13 +116,25 @@ def _clean_entity_name(name: str) -> str:
     return s[:120]
 
 
-def _extract_company_name(title: str, text: str) -> str:
-    blob = f"{title}\n{text[:5000]}"
+def _normalize_dashes(s: str) -> str:
+    return re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2212]", "-", s or "")
+
+
+def _extract_company_name(
+    title: str,
+    text: str,
+    *,
+    footer_text: str = "",
+    brand_hints: list[str] | None = None,
+    org_names: list[str] | None = None,
+) -> str:
+    blob = _normalize_dashes(f"{title}\n{footer_text}\n{text[:6000]}")
     patterns = (
         r"(ООО\s+[«\"][^»\"]+[»\"])",
+        r"(ООО\s+[A-Za-zА-Яа-яёЁ0-9\-«»\"'\s]{3,60})",
+        r"©[^\n]{0,120}(ООО\s+[«\"][^»\"]+[»\"])",
         r"ИНН\s+\d+\s+(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})",
         r"(ИП\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})",
-        r"©[^\n]{0,80}(ООО\s+[«\"][^»\"]+[»\"])",
     )
     for pat in patterns:
         m = re.search(pat, blob, flags=re.IGNORECASE)
@@ -130,6 +142,21 @@ def _extract_company_name(title: str, text: str) -> str:
             name = _clean_entity_name(m.group(1))
             if len(name) >= 4:
                 return name
+
+    for raw in (org_names or []) + (brand_hints or []):
+        val = _clean_entity_name(_normalize_dashes(raw))
+        if re.search(r"^(ООО|ИП|АО)\s", val, re.I):
+            return val
+        if re.search(r"опалубка|домстрой", val, re.I) and "ооо" in blob.lower():
+            m = re.search(r"(ООО\s+[«\"][^»\"]+[»\"])", blob, re.I)
+            if m:
+                return _clean_entity_name(m.group(1))
+        # Бренд из логотипа (alt): «Опалубка Домстрой» → как на сайте в подвале
+        if 5 <= len(val) <= 60 and re.search(r"[а-яёa-z]", val, re.I):
+            if not re.search(r"logo|icon|картин|image|banner", val, re.I):
+                if re.search(r"опалубка|строй|дом|клуб|инноватор", val, re.I):
+                    return val
+
     return ""
 
 
@@ -257,16 +284,20 @@ def _expand_queries(topics: list[str], body_low: str) -> list[str]:
 
     for topic in topics[:12]:
         add(topic)
-        if len(topic) > 45:
+        if len(topic) > 38 or "," in topic:
             continue
         core = _topic_core(topic)
         if not core or len(core) > 40:
             continue
+        topic_low = topic.lower()
         for marker, templates in _INTENT_MARKERS:
-            if marker in body_low:
-                for tpl in templates:
-                    add(tpl.format(core))
-                break
+            if marker not in body_low:
+                continue
+            if marker in topic_low:
+                continue
+            for tpl in templates:
+                add(tpl.format(core))
+            break
 
     if "под ключ" in body_low:
         for topic in topics[:5]:
@@ -372,6 +403,9 @@ def suggest_brief_from_analysis(
     meta_description: str = "",
     headings: list | None = None,
     nav_labels: list[str] | None = None,
+    footer_text: str = "",
+    brand_hints: list[str] | None = None,
+    org_names: list[str] | None = None,
 ) -> dict:
     text = text_sample or ""
     headings = headings or []
@@ -404,7 +438,13 @@ def suggest_brief_from_analysis(
 
     return {
         "clientSite": site_url,
-        "clientName": _extract_company_name(title, text),
+        "clientName": _extract_company_name(
+            title,
+            text,
+            footer_text=footer_text,
+            brand_hints=brand_hints,
+            org_names=org_names,
+        ),
         "niche": niche[:300],
         "queries": "\n".join(queries),
         "excludeDomains": _build_exclude(client_domain),

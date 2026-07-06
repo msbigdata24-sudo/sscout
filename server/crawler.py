@@ -289,6 +289,50 @@ async def analyze_site_homepage(site_url: str) -> dict:
             if label:
                 nav_labels.append(label)
 
+    footer_text = ""
+    footer_el = soup.find("footer")
+    if footer_el:
+        footer_text = footer_el.get_text("\n", strip=True)[:2500]
+
+    brand_hints: list[str] = []
+    for tag in soup.find_all("meta"):
+        prop = (tag.get("property") or tag.get("name") or "").lower()
+        if prop in ("og:site_name", "application-name", "twitter:title"):
+            val = (tag.get("content") or "").strip()
+            if val:
+                brand_hints.append(val)
+    for img in soup.find_all("img", limit=40):
+        for attr in ("alt", "title", "aria-label"):
+            val = (img.get(attr) or "").strip()
+            if val and 3 < len(val) < 80:
+                brand_hints.append(val)
+    for a in soup.select("a[class*='logo'], .logo a, header a[href='/']")[:6]:
+        val = a.get_text(" ", strip=True)
+        if val and 3 < len(val) < 80:
+            brand_hints.append(val)
+
+    org_names: list[str] = []
+    import json as _json
+
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw = script.string or script.get_text() or ""
+        if not raw.strip():
+            continue
+        try:
+            data = _json.loads(raw)
+        except Exception:
+            continue
+        for item in data if isinstance(data, list) else [data]:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if isinstance(name, str) and name.strip():
+                org_names.append(name.strip())
+            if item.get("@type") in ("Organization", "LocalBusiness", "Corporation"):
+                legal = item.get("legalName")
+                if isinstance(legal, str) and legal.strip():
+                    org_names.append(legal.strip())
+
     return {
         "ok": True,
         "site_url": normalize_url(final_url) or root,
@@ -297,6 +341,9 @@ async def analyze_site_homepage(site_url: str) -> dict:
         "meta_description": meta_description[:500],
         "headings": headings[:40],
         "nav_labels": nav_labels[:30],
+        "footer_text": footer_text,
+        "brand_hints": brand_hints[:20],
+        "org_names": org_names[:5],
     }
 
 

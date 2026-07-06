@@ -839,7 +839,7 @@
             <div class="field">
               <label for="exclude-domains">Исключить домены (через запятую)</label>
               <textarea id="exclude-domains" name="excludeDomains" rows="2"></textarea>
-              <p class="hint">Агрегаторы, дилеры клиента, чужие бренды.</p>
+              <p class="hint">Автоматически: домен клиента + агрегаторы (Avito, 2GIS, Yell…). Допишите дилеров и чужие бренды вручную.</p>
             </div>
             <div class="grid-2">
               <div class="field">
@@ -890,6 +890,7 @@
 
           <div class="actions">
             <button type="submit" class="btn btn-primary">Сохранить бриф</button>
+            <button type="button" class="btn btn-ghost" id="btn-clear-brief">Очистить бриф</button>
             <button type="button" class="btn btn-ghost" id="btn-reset-pilot">Загрузить пример брифа</button>
           </div>
         </form>

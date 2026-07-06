@@ -14,6 +14,10 @@ window.SSStorage = {
     localStorage.setItem(this.BRIEF_KEY, JSON.stringify(data));
   },
 
+  clearBrief() {
+    localStorage.removeItem(this.BRIEF_KEY);
+  },
+
   loadResults() {
     try {
       const raw = localStorage.getItem(this.RESULTS_KEY);

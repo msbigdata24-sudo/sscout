@@ -30,6 +30,25 @@
     useProxy: false,
   };
 
+  const EMPTY_BRIEF = {
+    clientName: "",
+    clientSite: "",
+    niche: "",
+    regionMode: "include",
+    regions: "",
+    queries: "",
+    excludeDomains: "",
+    phoneFilter: "business",
+    sources: ["serp", "site", "catalog"],
+    checkAlive: true,
+    maxSites: 50,
+    crawlDepth: 2,
+    requestDelayMs: 500,
+    useProxy: false,
+    xmlRiverUser: "",
+    apiKey: "",
+  };
+
   const PIPELINE_STEPS = [
     { id: "analyze", title: "Разбор сайта клиента", desc: "Ниша, ключевые слова, гео из контента." },
     { id: "serp", title: "Поиск в Яндекс", desc: "XMLRiver: живой поиск, 4 страницы выдачи." },
@@ -54,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-05-brief-universal";
+  const EXPECTED_BUILD_VERSION = "2026-07-06-brief-clear-name";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -1246,9 +1265,7 @@
         return;
       }
       lastSuggestedSiteUrl = url;
-      if (data.clientName && (!$("#client-name").value.trim() || force)) {
-        $("#client-name").value = data.clientName;
-      }
+      if (data.clientName) $("#client-name").value = data.clientName;
       if (data.niche) $("#niche").value = data.niche;
       if (data.queries) $("#queries").value = data.queries;
       if (data.excludeDomains) $("#exclude-domains").value = data.excludeDomains;
@@ -1364,6 +1381,19 @@
       window.SSStorage.saveBrief(brief);
       updateRunUI();
       toast("Пример брифа загружен");
+    });
+
+    $("#btn-clear-brief")?.addEventListener("click", () => {
+      fillForm(EMPTY_BRIEF);
+      clearRegions();
+      lastSuggestedSiteUrl = "";
+      brief = readForm();
+      window.SSStorage.clearBrief();
+      window.SSStorage.saveBrief(brief);
+      const hint = $("#niche-hint");
+      if (hint) hint.textContent = "";
+      updateRunUI();
+      toast("Бриф очищен — можно заполнить заново");
     });
 
     $("#client-site").addEventListener("blur", () => {

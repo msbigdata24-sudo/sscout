@@ -94,12 +94,14 @@ def check_brief_suggest_opalubka() -> None:
         headings=[
             {"level": "h2", "text": "Аренда, продажа опалубки"},
             {"level": "h3", "text": "Крупнощитовая опалубка"},
-            {"level": "h3", "text": "Мелкощитовая опалубка"},
         ],
-        nav_labels=["Аренда оборудования", "Продажа оборудования"],
+        nav_labels=["Аренда оборудования"],
+        footer_text="© 2020-2026, ООО «Опалубка\u2011Домстрой»",
+        brand_hints=["Опалубка Домстрой"],
     )
     assert "опалуб" in r["niche"].lower()
-    assert "опалуб" in r["queries"].lower()
+    assert "Опалубка" in r["clientName"]
+    assert "аренда аренда" not in r["queries"].lower()
     assert "opalubka-domstroy.ru" in r["excludeDomains"]
 
 
