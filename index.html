@@ -256,16 +256,136 @@
     .region-add-row select,
     .region-add-row input { flex: 1; min-width: 180px; }
 
-    .region-preset-block {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: flex-start;
+    .region-tree-wrap {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      overflow: hidden;
     }
 
-    .region-preset-block select {
+    .region-tree-filter {
       width: 100%;
-      min-height: 220px;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface);
+      padding: 10px 12px;
+    }
+
+    .region-tree-filter:focus {
+      outline: none;
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+
+    .region-tree {
+      max-height: 360px;
+      overflow: auto;
+      padding: 6px 0;
+    }
+
+    .region-district {
+      border-bottom: 1px solid transparent;
+    }
+
+    .region-district + .region-district {
+      border-top: 1px solid rgba(46, 58, 74, 0.6);
+    }
+
+    .region-district-row,
+    .region-subject-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .region-district-row:hover,
+    .region-subject-row:hover {
+      background: rgba(61, 139, 253, 0.08);
+    }
+
+    .region-district-pick {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .region-district-toggle {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .region-district-toggle:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .region-district-toggle .chevron {
+      display: inline-block;
+      transition: transform 0.15s;
+      transform: rotate(0deg);
+    }
+
+    .region-district.open > .region-district-row .chevron {
+      transform: rotate(90deg);
+    }
+
+    .region-tree-check {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .region-district-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .region-district-count {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .region-subjects {
+      display: none;
+      padding: 0 0 6px 0;
+    }
+
+    .region-district.open > .region-subjects {
+      display: block;
+    }
+
+    .region-subject-row {
+      padding-left: 42px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .region-district.hidden-by-filter,
+    .region-subject-row.hidden-by-filter {
+      display: none !important;
     }
 
     .region-actions { margin-top: 4px; }
@@ -806,12 +926,12 @@
               <p class="hint" id="region-chips-empty">Пока нет регионов — сбор без привязки к области. Нажмите × на чипе, чтобы убрать регион.</p>
             </div>
             <div class="field">
-              <label for="region-preset-add">Регионы из списка (89 субъектов РФ)</label>
-              <div class="region-preset-block">
-                <select id="region-preset-add" multiple size="12" aria-label="Выбор регионов из списка"></select>
-                <button type="button" class="btn btn-ghost btn-sm" id="btn-region-add-preset">Добавить выбранные</button>
+              <label for="region-tree-filter">Регионы по федеральным округам</label>
+              <div class="region-tree-wrap">
+                <input type="search" id="region-tree-filter" class="region-tree-filter" placeholder="Фильтр по регионам" autocomplete="off">
+                <div id="region-tree" class="region-tree" role="tree" aria-label="Выбор регионов по федеральным округам"></div>
               </div>
-              <p class="hint">Выделите один или несколько (Ctrl+клик) и нажмите «Добавить выбранные». Лишние убираются крестиком на чипе.</p>
+              <p class="hint">Отметьте целый округ (ЦФО, СФО…) или отдельные области. Снять — снять галочку или крестик на чипе сверху.</p>
             </div>
             <div class="region-actions">
               <button type="button" class="btn btn-ghost btn-sm" id="btn-region-clear">Очистить все регионы</button>

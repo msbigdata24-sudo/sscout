@@ -22,6 +22,29 @@ def check_js_constants() -> None:
     assert m.group(1) == BUILD_VERSION, f"app.js version {m.group(1)} != config {BUILD_VERSION}"
     assert "suggestBriefFromSite" in app_js
     assert "/api/brief/suggest" in app_js
+    assert "buildRegionTree" in app_js
+    index_html = (ROOT / "index.html").read_text(encoding="utf-8")
+    assert 'id="region-tree"' in index_html
+    assert 'id="region-tree-filter"' in index_html
+    assert "region-preset-add" not in index_html
+
+
+def check_federal_districts() -> None:
+    from server.regions_ru import REGIONS_RU
+
+    js = (ROOT / "static" / "js" / "regions-ru.js").read_text(encoding="utf-8")
+    assert "SS_FEDERAL_DISTRICTS" in js
+    assert "Центральный федеральный округ" in js
+    assert "Сибирский федеральный округ" in js
+    assert "Дальневосточный федеральный округ" in js
+    blocks = re.findall(r"regions:\s*\[(.*?)\]", js, re.S)
+    assert len(blocks) == 8, f"expected 8 FO, got {len(blocks)}"
+    names: list[str] = []
+    for block in blocks:
+        names.extend(re.findall(r'"([^"]+)"', block))
+    assert len(names) == 89, f"expected 89 regions in FO tree, got {len(names)}"
+    assert set(names) == set(REGIONS_RU)
+    assert len(names) == len(set(names)), "duplicate regions across districts"
 
 
 def check_client_site_urls() -> None:
@@ -205,6 +228,7 @@ def check_brief_suggest_strateix() -> None:
 
 def main() -> None:
     check_js_constants()
+    check_federal_districts()
     check_client_site_urls()
     check_region_exclude()
     check_serp_filters()

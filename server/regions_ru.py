@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# 89 субъектов РФ — синхронно с static/js/regions-ru.js
+# 89 субъектов РФ — синхронно с static/js/regions-ru.js (дерево ФО)
 REGIONS_RU: tuple[str, ...] = (
     "Алтайский край",
     "Амурская область",

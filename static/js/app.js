@@ -73,7 +73,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-06-remove-demo-badge";
+  const EXPECTED_BUILD_VERSION = "2026-07-08-federal-districts";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -99,6 +99,83 @@
 
   let activeRegions = [];
 
+  const SHORT_REGION_LABELS = {
+    "Москва": "г. Москва",
+    "Санкт-Петербург": "г. Санкт-Петербург",
+    "Севастополь": "г. Севастополь",
+    "Белгородская область": "Белгородская обл.",
+    "Брянская область": "Брянская обл.",
+    "Владимирская область": "Владимирская обл.",
+    "Воронежская область": "Воронежская обл.",
+    "Ивановская область": "Ивановская обл.",
+    "Калужская область": "Калужская обл.",
+    "Костромская область": "Костромская обл.",
+    "Курская область": "Курская обл.",
+    "Липецкая область": "Липецкая обл.",
+    "Московская область": "Московская обл.",
+    "Орловская область": "Орловская обл.",
+    "Рязанская область": "Рязанская обл.",
+    "Смоленская область": "Смоленская обл.",
+    "Тамбовская область": "Тамбовская обл.",
+    "Тверская область": "Тверская обл.",
+    "Тульская область": "Тульская обл.",
+    "Ярославская область": "Ярославская обл.",
+    "Архангельская область": "Архангельская обл.",
+    "Вологодская область": "Вологодская обл.",
+    "Калининградская область": "Калининградская обл.",
+    "Ленинградская область": "Ленинградская обл.",
+    "Мурманская область": "Мурманская обл.",
+    "Новгородская область": "Новгородская обл.",
+    "Псковская область": "Псковская обл.",
+    "Астраханская область": "Астраханская обл.",
+    "Волгоградская область": "Волгоградская обл.",
+    "Запорожская область": "Запорожская обл.",
+    "Ростовская область": "Ростовская обл.",
+    "Херсонская область": "Херсонская обл.",
+    "Кировская область": "Кировская обл.",
+    "Нижегородская область": "Нижегородская обл.",
+    "Оренбургская область": "Оренбургская обл.",
+    "Пензенская область": "Пензенская обл.",
+    "Самарская область": "Самарская обл.",
+    "Саратовская область": "Саратовская обл.",
+    "Ульяновская область": "Ульяновская обл.",
+    "Курганская область": "Курганская обл.",
+    "Свердловская область": "Свердловская обл.",
+    "Тюменская область": "Тюменская обл.",
+    "Челябинская область": "Челябинская обл.",
+    "Иркутская область": "Иркутская обл.",
+    "Новосибирская область": "Новосибирская обл.",
+    "Омская область": "Омская обл.",
+    "Томская область": "Томская обл.",
+    "Амурская область": "Амурская обл.",
+    "Магаданская область": "Магаданская обл.",
+    "Сахалинская область": "Сахалинская обл.",
+    "Кемеровская область — Кузбасс": "Кемеровская обл. — Кузбасс",
+    "Ненецкий автономный округ": "Ненецкий АО",
+    "Ханты-Мансийский автономный округ — Югра": "ХМАО — Югра",
+    "Ямало-Ненецкий автономный округ": "Ямало-Ненецкий АО",
+    "Чукотский автономный округ": "Чукотский АО",
+    "Еврейская автономная область": "Еврейская АО",
+    "Донецкая Народная Республика": "ДНР",
+    "Луганская Народная Республика": "ЛНР",
+  };
+
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function regionShortLabel(name) {
+    return SHORT_REGION_LABELS[name] || name;
+  }
+
+  function isRegionActive(name) {
+    const low = (name || "").toLowerCase();
+    return activeRegions.some((x) => x.toLowerCase() === low);
+  }
+
   function parseRegionsStr(regionsStr) {
     return [...new Set(
       (regionsStr || "").split(",").map((r) => r.trim()).filter(Boolean),
@@ -116,19 +193,41 @@
     if (!activeRegions.length) {
       box.innerHTML = "";
       if (empty) empty.hidden = false;
+      syncRegionTreeChecks();
       return;
     }
     if (empty) empty.hidden = true;
     box.innerHTML = activeRegions.map((r) => {
-      const safe = r.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const safe = escapeHtml(r);
       return `<button type="button" class="region-chip" data-region="${safe}" title="Убрать: ${safe}">
         <span>${safe}</span><span class="region-chip-x" aria-hidden="true">×</span>
       </button>`;
     }).join("");
+    syncRegionTreeChecks();
   }
 
   function syncRegionFilter() {
     fillRegionFilter(collectRegions());
+  }
+
+  function syncRegionTreeChecks() {
+    const tree = $("#region-tree");
+    if (!tree) return;
+    tree.querySelectorAll(".region-subject-check").forEach((cb) => {
+      cb.checked = isRegionActive(cb.value);
+    });
+    tree.querySelectorAll(".region-district").forEach((dist) => {
+      const cbs = [...dist.querySelectorAll(".region-subject-check")];
+      const checked = cbs.filter((c) => c.checked).length;
+      const districtCb = dist.querySelector(".region-district-check");
+      if (!districtCb) return;
+      districtCb.checked = checked > 0 && checked === cbs.length;
+      districtCb.indeterminate = checked > 0 && checked < cbs.length;
+      const countEl = dist.querySelector(".region-district-count");
+      if (countEl) {
+        countEl.textContent = checked ? `${checked}/${cbs.length}` : `${cbs.length}`;
+      }
+    });
   }
 
   function addRegions(names) {
@@ -143,6 +242,8 @@
     if (added) {
       renderRegionChips();
       syncRegionFilter();
+    } else {
+      syncRegionTreeChecks();
     }
     return added;
   }
@@ -159,6 +260,18 @@
     syncRegionFilter();
   }
 
+  function removeRegions(names) {
+    const drop = new Set((names || []).map((n) => (n || "").toLowerCase()));
+    const before = activeRegions.length;
+    activeRegions = activeRegions.filter((r) => !drop.has(r.toLowerCase()));
+    if (activeRegions.length !== before) {
+      renderRegionChips();
+      syncRegionFilter();
+    } else {
+      syncRegionTreeChecks();
+    }
+  }
+
   function clearRegions() {
     activeRegions = [];
     renderRegionChips();
@@ -170,14 +283,63 @@
     renderRegionChips();
   }
 
-  function initRegionPresetSelect() {
-    const sel = $("#region-preset-add");
-    const list = window.SS_REGIONS_RU || [];
-    if (!sel || !list.length) return;
-    sel.innerHTML = list.map((name) => {
-      const safe = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-      return `<option value="${safe}">${safe}</option>`;
+  function buildRegionTree() {
+    const tree = $("#region-tree");
+    const districts = window.SS_FEDERAL_DISTRICTS || [];
+    if (!tree || !districts.length) return;
+
+    tree.innerHTML = districts.map((d) => {
+      const id = escapeHtml(d.id);
+      const name = escapeHtml(d.name);
+      const short = escapeHtml(d.short || "");
+      const subjects = (d.regions || []).map((r) => {
+        const full = escapeHtml(r);
+        const label = escapeHtml(regionShortLabel(r));
+        return `<label class="region-subject-row" data-region-name="${full}" data-region-label="${label}">
+          <input type="checkbox" class="region-tree-check region-subject-check" value="${full}">
+          <span>${label}</span>
+        </label>`;
+      }).join("");
+      return `<div class="region-district" data-district-id="${id}" data-district-name="${name}" data-district-short="${short}">
+        <div class="region-district-row">
+          <button type="button" class="region-district-toggle" aria-label="Раскрыть ${name}" title="Раскрыть">
+            <span class="chevron" aria-hidden="true">▶</span>
+          </button>
+          <label class="region-district-pick">
+            <input type="checkbox" class="region-tree-check region-district-check" data-district="${id}">
+            <span class="region-district-label">${name}${short ? ` (${short})` : ""}</span>
+            <span class="region-district-count">${(d.regions || []).length}</span>
+          </label>
+        </div>
+        <div class="region-subjects">${subjects}</div>
+      </div>`;
     }).join("");
+
+    syncRegionTreeChecks();
+  }
+
+  function filterRegionTree(query) {
+    const tree = $("#region-tree");
+    if (!tree) return;
+    const q = (query || "").trim().toLowerCase();
+    tree.querySelectorAll(".region-district").forEach((dist) => {
+      const dName = (dist.dataset.districtName || "").toLowerCase();
+      const dShort = (dist.dataset.districtShort || "").toLowerCase();
+      let anyVisible = false;
+      dist.querySelectorAll(".region-subject-row").forEach((row) => {
+        const hay = `${row.dataset.regionName || ""} ${row.dataset.regionLabel || ""}`.toLowerCase();
+        const match = !q || hay.includes(q) || dName.includes(q) || dShort.includes(q);
+        row.classList.toggle("hidden-by-filter", !match);
+        if (match) anyVisible = true;
+      });
+      const districtMatch = !q || dName.includes(q) || dShort.includes(q) || anyVisible;
+      dist.classList.toggle("hidden-by-filter", !districtMatch);
+      if (q && anyVisible) dist.classList.add("open");
+    });
+  }
+
+  function initRegionPresetSelect() {
+    buildRegionTree();
   }
 
   let pendingResumeRunId = null;
@@ -1357,20 +1519,44 @@
       removeRegion(chip.dataset.region);
     });
 
-    $("#btn-region-add-preset")?.addEventListener("click", () => {
-      const sel = $("#region-preset-add");
-      const picked = [...(sel?.selectedOptions || [])].map((o) => o.value).filter(Boolean);
-      if (!picked.length) {
-        toast("Выберите регионы в списке (Ctrl+клик для нескольких)");
+    $("#region-tree")?.addEventListener("click", (e) => {
+      const toggle = e.target.closest(".region-district-toggle");
+      if (toggle) {
+        e.preventDefault();
+        const dist = toggle.closest(".region-district");
+        if (dist) dist.classList.toggle("open");
         return;
       }
-      const added = addRegions(picked);
-      if (sel) $$("#region-preset-add option").forEach((o) => { o.selected = false; });
-      if (added) {
-        toast(added === 1 ? "Добавлен 1 регион" : `Добавлено регионов: ${added}`);
-      } else {
-        toast("Все выбранные регионы уже в списке");
+    });
+
+    $("#region-tree")?.addEventListener("change", (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement) || t.type !== "checkbox") return;
+
+      if (t.classList.contains("region-district-check")) {
+        const dist = t.closest(".region-district");
+        const names = [...(dist?.querySelectorAll(".region-subject-check") || [])]
+          .map((cb) => cb.value)
+          .filter(Boolean);
+        if (t.checked) {
+          const added = addRegions(names);
+          toast(added
+            ? (added === 1 ? "Добавлен 1 регион" : `Добавлено регионов: ${added}`)
+            : "Все регионы округа уже выбраны");
+        } else {
+          removeRegions(names);
+        }
+        return;
       }
+
+      if (t.classList.contains("region-subject-check")) {
+        if (t.checked) addRegions([t.value]);
+        else removeRegion(t.value);
+      }
+    });
+
+    $("#region-tree-filter")?.addEventListener("input", (e) => {
+      filterRegionTree(e.target.value || "");
     });
 
     $("#btn-region-clear")?.addEventListener("click", () => {
