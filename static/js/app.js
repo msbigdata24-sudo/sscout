@@ -5,6 +5,7 @@
     : window.location.origin;
 
   const PILOT = {
+    operatorName: "",
     clientName: "ООО «Опалубка-Домстрой»",
     clientSite: "https://opalubka-domstroy.ru",
     niche: "Аренда и продажа опалубки (крупнощитовая, мелкощитовая, перекрытия, колонны). Склад Щелково, МО.",
@@ -31,6 +32,7 @@
   };
 
   const EMPTY_BRIEF = {
+    operatorName: "",
     clientName: "",
     clientSite: "",
     niche: "",
@@ -73,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-08-ssl-weak-cert";
+  const EXPECTED_BUILD_VERSION = "2026-07-08-instructions-history";
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -546,6 +548,7 @@
       : ["serp", "site", "catalog"];
     const clientSite = normalizeClientSite($("#client-site")?.value || "");
     return ensureBriefQueries({
+      operatorName: ($("#operator-name")?.value || "").trim(),
       clientName: ($("#client-name")?.value || "").trim(),
       clientSite,
       niche: ($("#niche")?.value || "").trim(),
@@ -566,6 +569,7 @@
   }
 
   function fillForm(data) {
+    $("#operator-name").value = data.operatorName || "";
     $("#client-name").value = data.clientName || "";
     $("#client-site").value = data.clientSite || "";
     $("#niche").value = data.niche || "";
@@ -1175,6 +1179,12 @@
   async function runPipeline() {
     if (startingRun || runActive) return;
     brief = readForm();
+    if (!(brief.operatorName || "").trim()) {
+      toast("Укажите ваше имя в поле «Кто запускает»");
+      $("#operator-name")?.focus();
+      showPage("brief");
+      return;
+    }
     if (!isValidClientSite(brief.clientSite)) {
       toast("Укажите корректный URL сайта, например https://opalubka-domstroy.ru");
       return;
@@ -1290,16 +1300,56 @@
     }
   }
 
+  function formatHistoryQueries(item) {
+    const queries = item.queries || [];
+    if (!queries.length) return "<span class='hint'>—</span>";
+    const preview = queries.slice(0, 2).map((q) => escapeHtml(q)).join("<br>");
+    if (queries.length <= 2) return `<div class="history-queries">${preview}</div>`;
+    const rest = queries.slice(2).map((q) => `<li>${escapeHtml(q)}</li>`).join("");
+    return `<details class="history-queries"><summary>${preview}<br>ещё ${queries.length - 2}</summary><ul>${rest}</ul></details>`;
+  }
+
+  function formatHistoryRegions(item) {
+    const count = item.regions_count || 0;
+    if (!count) return "все РФ";
+    const mode = item.region_mode === "exclude" ? "кроме" : "";
+    if (count <= 2) return `${mode} ${(item.regions || []).join(", ")}`.trim();
+    return `${mode} ${count} регионов`.trim();
+  }
+
+  function openInstructions() {
+    const modal = $("#instructions-modal");
+    if (!modal) return;
+    modal.hidden = false;
+    modal.classList.add("open");
+    $("#btn-close-instructions")?.focus();
+  }
+
+  function closeInstructions() {
+    const modal = $("#instructions-modal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.hidden = true;
+  }
+
   async function loadHistory() {
     const box = $("#history-list");
+    const meta = $("#history-meta");
     if (!box) return;
     if (!apiOnline) {
       box.innerHTML = "<p class='hint'>Сервер офлайн</p>";
+      if (meta) meta.textContent = "";
       return;
     }
-    const res = await fetch(`${API_BASE}/api/history`);
+    const res = await fetch(`${API_BASE}/api/history?limit=200`);
     const data = await res.json();
     const items = data.items || [];
+    const total = data.total ?? items.length;
+    if (meta) {
+      meta.textContent = total
+        ? `Всего прогонов на сервере: ${total}. Показано: ${items.length}.`
+        : "Пока нет прогонов на этом сервере.";
+    }
     if (!items.length) {
       box.innerHTML = "<p class='hint'>Пока нет прогонов</p>";
       return;
@@ -1308,10 +1358,13 @@
       <table class="history-table">
         <thead>
           <tr>
-            <th>Дата</th>
+            <th>Когда</th>
+            <th>Кто</th>
             <th>Клиент</th>
+            <th>Запросы</th>
+            <th>Регионы</th>
             <th>Сайтов</th>
-            <th>Телефонов</th>
+            <th>Тел.</th>
             <th>Статус</th>
             <th></th>
           </tr>
@@ -1320,11 +1373,17 @@
           ${items.map((it) => `
             <tr>
               <td>${new Date(it.created_at).toLocaleString("ru-RU")}</td>
-              <td>${it.client_name || "—"}</td>
+              <td>${escapeHtml(it.operator_name || "не указан")}</td>
+              <td>
+                <div>${escapeHtml(it.client_name || "—")}</div>
+                <div class="history-site">${escapeHtml(it.client_site || "")}</div>
+              </td>
+              <td>${formatHistoryQueries(it)}</td>
+              <td>${escapeHtml(formatHistoryRegions(it))}</td>
               <td>${it.sites_count}</td>
               <td>${it.phones_count}</td>
-              <td>${it.status}</td>
-              <td><button type="button" class="btn btn-ghost btn-sm" data-load-run="${it.id}">Открыть</button></td>
+              <td><span class="status-pill ${escapeHtml(it.status || "")}">${escapeHtml(it.status_label || it.status || "—")}</span></td>
+              <td><button type="button" class="btn btn-ghost btn-sm" data-load-run="${escapeHtml(it.id)}">Открыть</button></td>
             </tr>`).join("")}
         </tbody>
       </table>`;
@@ -1502,6 +1561,11 @@
     $("#brief-form").addEventListener("submit", (e) => {
       e.preventDefault();
       brief = readForm();
+      if (!(brief.operatorName || "").trim()) {
+        toast("Укажите ваше имя в поле «Кто запускает»");
+        $("#operator-name")?.focus();
+        return;
+      }
       if (!isValidClientSite(brief.clientSite)) {
         toast("В поле «Сайт клиента» нужен адрес вида https://example.ru");
         return;
@@ -1562,6 +1626,15 @@
     $("#btn-region-clear")?.addEventListener("click", () => {
       clearRegions();
       toast("Регионы очищены");
+    });
+
+    $("#btn-instructions")?.addEventListener("click", openInstructions);
+    $("#btn-close-instructions")?.addEventListener("click", closeInstructions);
+    $("#instructions-modal")?.addEventListener("click", (e) => {
+      if (e.target?.id === "instructions-modal") closeInstructions();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeInstructions();
     });
 
     $("#btn-reset-pilot").addEventListener("click", () => {

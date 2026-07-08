@@ -27,6 +27,26 @@ def check_js_constants() -> None:
     assert 'id="region-tree"' in index_html
     assert 'id="region-tree-filter"' in index_html
     assert "region-preset-add" not in index_html
+    assert 'id="btn-instructions"' in index_html
+    assert 'id="instructions-modal"' in index_html
+    assert 'id="operator-name"' in index_html
+
+
+def check_history_fields() -> None:
+    from server.db import _parse_queries, _status_label, db
+
+    assert _parse_queries("а\nб, в") == ["а", "б", "в"]
+    assert _status_label("done") == "готово"
+    assert _status_label("error") == "ошибка"
+    total = db.count_runs()
+    items = db.list_runs(5)
+    assert isinstance(total, int)
+    if items:
+        it = items[0]
+        assert "operator_name" in it
+        assert "queries" in it
+        assert "queries_count" in it
+        assert "status_label" in it
 
 
 def check_ssl_weak_cert_fallback() -> None:
@@ -243,6 +263,7 @@ def check_brief_suggest_strateix() -> None:
 def main() -> None:
     check_js_constants()
     check_federal_districts()
+    check_history_fields()
     check_ssl_weak_cert_fallback()
     check_client_site_urls()
     check_region_exclude()

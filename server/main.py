@@ -47,6 +47,7 @@ app.add_middleware(
 
 
 class BriefModel(BaseModel):
+    operatorName: str = ""
     clientName: str = ""
     clientSite: str
     niche: str = ""
@@ -99,7 +100,7 @@ def health():
         "ok": True,
         "version": BUILD_VERSION,
         "branch": "main",
-        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest"],
+        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest", "instructions", "history-log"],
         "search_provider": "xmlriver",
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
@@ -338,8 +339,8 @@ def api_results(run_id: str):
 
 
 @app.get("/api/history")
-def api_history(limit: int = Query(50, ge=1, le=200)):
-    return {"items": db.list_runs(limit)}
+def api_history(limit: int = Query(100, ge=1, le=500)):
+    return {"items": db.list_runs(limit), "total": db.count_runs()}
 
 
 @app.get("/api/history/compare")

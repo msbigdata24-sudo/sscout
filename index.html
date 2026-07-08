@@ -813,6 +813,157 @@
     th[data-sort]:hover { color: var(--text); }
     .status-cell { cursor: pointer; }
 
+    .nav-help {
+      margin-top: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .btn-instructions {
+      width: 100%;
+      text-align: left;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .btn-instructions:hover {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 12, 18, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      z-index: 200;
+    }
+
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      width: min(720px, 100%);
+      max-height: min(88vh, 900px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-head h3 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    .modal-close:hover { color: var(--text); background: var(--surface-2); }
+
+    .modal-body {
+      padding: 20px 24px 24px;
+      overflow-y: auto;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .modal-body h4 {
+      font-size: 15px;
+      font-weight: 800;
+      margin: 18px 0 8px;
+      color: var(--accent);
+    }
+
+    .modal-body h4:first-child { margin-top: 0; }
+
+    .modal-body ul, .modal-body ol {
+      margin: 0 0 12px 18px;
+      color: var(--muted);
+    }
+
+    .modal-body li { margin-bottom: 6px; }
+
+    .modal-body .rule-do { color: var(--success); font-weight: 700; }
+    .modal-body .rule-dont { color: var(--danger); font-weight: 700; }
+
+    .history-meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .history-queries {
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 280px;
+    }
+
+    .history-queries summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .history-queries ul {
+      margin: 6px 0 0 16px;
+      padding: 0;
+    }
+
+    .history-queries li { margin-bottom: 2px; }
+
+    .history-site {
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status-pill.done { background: rgba(52, 199, 123, 0.15); color: var(--success); }
+    .status-pill.error { background: rgba(240, 101, 101, 0.15); color: var(--danger); }
+    .status-pill.stopped { background: rgba(240, 180, 41, 0.15); color: var(--warn); }
+    .status-pill.running,
+    .status-pill.pending { background: var(--accent-dim); color: var(--accent); }
+
     .toast {
       position: fixed;
       bottom: 24px;
@@ -864,8 +1015,12 @@
         <button type="button" class="active" data-page="brief">Бриф клиента</button>
         <button type="button" data-page="run">Запуск сбора</button>
         <button type="button" data-page="results">Результаты</button>
-        <button type="button" data-page="history">История</button>
+        <button type="button" data-page="history">История запросов</button>
       </nav>
+
+      <div class="nav-help">
+        <button type="button" class="btn-instructions" id="btn-instructions">📖 Как пользоваться</button>
+      </div>
 
       <div class="sidebar-foot">
         <span id="api-status">Сервер: проверка…</span>
@@ -881,6 +1036,15 @@
         </header>
 
         <form id="brief-form">
+          <div class="card">
+            <div class="card-title">Кто запускает</div>
+            <div class="field">
+              <label for="operator-name">Ваше имя</label>
+              <input type="text" id="operator-name" name="operatorName" placeholder="Иван" required>
+              <p class="hint">Сохраняется в брифе и попадает в историю запросов — видно, кто и когда запускал сбор.</p>
+            </div>
+          </div>
+
           <div class="card" id="client-card">
             <div class="card-title">Клиент</div>
             <div class="grid-2">
@@ -1110,14 +1274,75 @@
 
       <section class="page" id="page-history">
         <header class="page-head">
-          <h2>История запусков</h2>
-          <p>Список прошлых сборов по этому серверу. Откройте результат или продолжите остановленный прогон.</p>
+          <h2>История запросов</h2>
+          <p>Все запуски на этом сервере: кто запускал, для какого клиента, какие поисковые запросы и когда.</p>
         </header>
         <div class="card">
+          <p class="history-meta" id="history-meta">Загрузка…</p>
           <div id="history-list"></div>
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="modal-backdrop" id="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="instructions-title" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="instructions-title">Как пользоваться Сигнал-Скаутом</h3>
+        <button type="button" class="modal-close" id="btn-close-instructions" aria-label="Закрыть">×</button>
+      </div>
+      <div class="modal-body">
+        <h4>Шаг 1 — Бриф</h4>
+        <ol>
+          <li>Укажите <strong>ваше имя</strong> — попадёт в историю.</li>
+          <li>Введите <strong>сайт клиента</strong> и нажмите «Заполнить по сайту» — подставятся ниша и черновик запросов.</li>
+          <li>Выберите <strong>регионы по федеральным округам</strong> (ЦФО, СФО и т.д.) — как клиент планирует ГЕО.</li>
+          <li>Проверьте <strong>поисковые запросы</strong> — только коммерческие («изготовление…», «аренда…»), без бренда клиента.</li>
+          <li>Нажмите <strong>«Сохранить бриф»</strong> перед запуском.</li>
+        </ol>
+
+        <h4>Шаг 2 — Запуск</h4>
+        <ol>
+          <li>Убедитесь, что в брифе указаны <strong>ID и ключ XMLRiver</strong> (или они заданы на сервере).</li>
+          <li>Нажмите <strong>«Запустить сбор»</strong> — смотрите лог в реальном времени.</li>
+          <li>Если остановили — <strong>«Продолжить сбор»</strong> с того же места.</li>
+        </ol>
+
+        <h4>Шаг 3 — Результаты</h4>
+        <ul>
+          <li>Таблица: сайт конкурента, компания, регион, телефоны, источник.</li>
+          <li>Фильтр по региону и поиск по таблице — сверху.</li>
+          <li>Экспорт в Excel — кнопка в разделе «Результаты».</li>
+          <li>Статус «агрегатор» / «исключён» — это не конкурент, а каталог или мусор.</li>
+        </ul>
+
+        <h4>Куда смотреть при проблемах</h4>
+        <ul>
+          <li><strong>Лог в реальном времени</strong> — на каком шаге упало (разбор сайта, Яндекс, обход).</li>
+          <li><strong>История запросов</strong> — прошлые прогоны, кто запускал и с какими запросами.</li>
+          <li>Ошибка SSL на старом сайте клиента — попробуйте <code>http://</code> вместо <code>https://</code>.</li>
+          <li>«Нет сайтов после фильтров» — расширьте запросы или регионы, проверьте баланс XMLRiver.</li>
+        </ul>
+
+        <h4><span class="rule-do">Нужно делать</span></h4>
+        <ul>
+          <li>Сохранять бриф перед каждым запуском.</li>
+          <li>Указывать своё имя в поле «Кто запускает».</li>
+          <li>Проверять запросы вручную после автозаполнения.</li>
+          <li>Исключать сайт клиента и агрегаторы (Авито, 2ГИС, Пульсцен).</li>
+          <li>Использовать телефоны только для рабочих задач Стратеикс.</li>
+        </ul>
+
+        <h4><span class="rule-dont">Нельзя</span></h4>
+        <ul>
+          <li>Добавлять в запросы <strong>бренд клиента</strong> — в выдаче будет сам клиент, не конкуренты.</li>
+          <li>Использовать информационные запросы («что такое», «ГОСТ», «рейтинг») — попадут статьи, не заводы.</li>
+          <li>Запускать десятки сборов подряд без паузы — тратится XMLRiver и нагрузка на сервер.</li>
+          <li>Передавать выгрузку третьим лицам без согласования.</li>
+          <li>Спамить найденные номера — только целевой B2B-контакт по регламенту Стратеикс.</li>
+        </ul>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast" role="status"></div>

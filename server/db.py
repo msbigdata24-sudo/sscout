@@ -9,6 +9,29 @@ from typing import Any
 from server.config import DB_PATH
 
 
+def _parse_queries(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(q).strip() for q in raw if str(q).strip()]
+    text = str(raw or "")
+    out: list[str] = []
+    for part in text.replace(",", "\n").split("\n"):
+        q = part.strip()
+        if q and q not in out:
+            out.append(q)
+    return out
+
+
+def _status_label(status: str) -> str:
+    labels = {
+        "done": "готово",
+        "error": "ошибка",
+        "stopped": "остановлен",
+        "running": "идёт",
+        "pending": "ожидание",
+    }
+    return labels.get((status or "").lower(), status or "—")
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -116,6 +139,15 @@ class Database:
                 return it
         return None
 
+    def count_runs(self) -> int:
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute("SELECT COUNT(*) AS c FROM runs").fetchone()
+                return int(row["c"]) if row else 0
+            finally:
+                conn.close()
+
     def list_runs(self, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:
             conn = self._connect()
@@ -131,11 +163,22 @@ class Database:
         for row in rows:
             brief = json.loads(row["brief_json"])
             results = json.loads(row["results_json"] or "[]")
+            queries = _parse_queries(brief.get("queries"))
+            regions_raw = (brief.get("regions") or "").strip()
+            region_list = [r.strip() for r in regions_raw.split(",") if r.strip()]
             out.append({
                 "id": row["id"],
                 "status": row["status"],
+                "status_label": _status_label(row["status"]),
+                "operator_name": (brief.get("operatorName") or "").strip() or "не указан",
                 "client_name": brief.get("clientName", ""),
                 "client_site": brief.get("clientSite", ""),
+                "niche": (brief.get("niche") or "")[:120],
+                "queries": queries,
+                "queries_count": len(queries),
+                "regions": region_list,
+                "regions_count": len(region_list),
+                "region_mode": brief.get("regionMode", "include"),
                 "sites_count": len(results),
                 "phones_count": sum(1 for r in results if r.get("p1")),
                 "created_at": row["created_at"],
