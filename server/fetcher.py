@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import random
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 
-from server.config import FETCH_RETRIES, HTTP_TIMEOUT, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, SITE_TIMEOUT
+from server.config import FETCH_RETRIES, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, SITE_TIMEOUT
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -22,6 +22,39 @@ def _headers() -> dict[str, str]:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     }
+
+
+def _is_ssl_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "certificate_verify_failed",
+            "ssl:",
+            "sslerror",
+            "certificate verify failed",
+            "ee certificate key too weak",
+            "certificate has expired",
+            "self signed certificate",
+            "self-signed certificate",
+        )
+    )
+
+
+def _with_scheme(url: str, scheme: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        return ""
+    return urlunparse((scheme, parsed.netloc, parsed.path or "/", parsed.params, parsed.query, parsed.fragment))
+
+
+def _candidate_urls(url: str) -> list[str]:
+    """HTTPS со слабым сертификатом → сначала https, затем http."""
+    out: list[str] = []
+    for candidate in (url, _with_scheme(url, "http"), _with_scheme(url, "https")):
+        if candidate and candidate not in out:
+            out.append(candidate)
+    return out
 
 
 async def _via_scrapingbee(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
@@ -50,6 +83,33 @@ async def _via_scrapingfish(client: httpx.AsyncClient, url: str) -> tuple[str, i
     return resp.text or "", resp.status_code
 
 
+def _page_ok(resp: httpx.Response, *, method: str) -> tuple[str, str, int, str] | None:
+    if resp.status_code >= 400:
+        return None
+    # Берём сырые байты: у старых сайтов body иногда «пустой» в text из‑за кодировки
+    raw = resp.content or b""
+    if len(raw) < 200 and not (resp.text and "<html" in (resp.text or "").lower()):
+        return None
+    html = resp.text or ""
+    if not html and raw:
+        html = raw.decode(resp.encoding or "utf-8", errors="replace")
+    if html and ("<html" in html.lower() or len(html) > 400):
+        return html, str(resp.url), resp.status_code, method
+    return None
+
+
+async def _direct_get(
+    url: str,
+    *,
+    verify: bool,
+    timeout: httpx.Timeout,
+    method: str,
+) -> tuple[str, str, int, str] | None:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=verify) as client:
+        resp = await client.get(url, headers=_headers())
+        return _page_ok(resp, method=method)
+
+
 async def fetch_page(
     url: str,
     *,
@@ -62,29 +122,54 @@ async def fetch_page(
 
     timeout = httpx.Timeout(SITE_TIMEOUT, connect=min(10, SITE_TIMEOUT))
     last_error = ""
+    candidates = _candidate_urls(url)
 
     for attempt in range(1, FETCH_RETRIES + 1):
         try:
+            if not use_proxy:
+                for candidate in candidates:
+                    # 1) обычный HTTPS/HTTP
+                    try:
+                        got = await _direct_get(
+                            candidate, verify=True, timeout=timeout, method="direct",
+                        )
+                        if got:
+                            return got
+                    except Exception as exc:
+                        last_error = str(exc)
+                        if not _is_ssl_error(exc):
+                            # таймаут/сеть — пробуем следующий URL (часто http после https)
+                            continue
+                        # 2) слабый/битый SSL
+                        try:
+                            got = await _direct_get(
+                                candidate,
+                                verify=False,
+                                timeout=timeout,
+                                method="direct-insecure-ssl",
+                            )
+                            if got:
+                                return got
+                        except Exception as exc2:
+                            last_error = str(exc2)
+                            continue
+
+                if attempt < FETCH_RETRIES:
+                    await asyncio.sleep(0.8 * attempt)
+                    continue
+
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                if not use_proxy:
-                    resp = await client.get(url, headers=_headers())
-                    if resp.status_code < 400:
-                        html = resp.text or ""
-                        if html and ("<html" in html.lower() or len(html) > 400):
-                            return html, str(resp.url), resp.status_code, "direct"
-                    if attempt < FETCH_RETRIES:
-                        await asyncio.sleep(0.8 * attempt)
-                        continue
+                code = 0
+                for candidate in candidates:
+                    html, code = await _via_scrapingbee(client, candidate)
+                    if html:
+                        return html, candidate, code, "scrapingbee"
 
-                html, code = await _via_scrapingbee(client, url)
-                if html:
-                    return html, url, code, "scrapingbee"
+                    html, code = await _via_scrapingfish(client, candidate)
+                    if html:
+                        return html, candidate, code, "scrapingfish"
 
-                html, code = await _via_scrapingfish(client, url)
-                if html:
-                    return html, url, code, "scrapingfish"
-
-                last_error = f"HTTP {code}" if code else "empty"
+                last_error = f"HTTP {code}" if code else (last_error or "empty")
         except Exception as exc:
             last_error = str(exc)
             if attempt < FETCH_RETRIES:

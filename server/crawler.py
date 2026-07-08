@@ -492,11 +492,12 @@ async def analyze_client_site(site_url: str, **kwargs) -> dict:
     root = normalize_url(site_url)
     if not root:
         return {"ok": False, "error": "Некорректный URL"}
-    host = urlparse(root).netloc.lower().lstrip("www.")
+    # Передаём полный URL со схемой: старые заводские сайты часто живут на http,
+    # а https падает с «certificate key too weak».
     depth = int(kwargs.pop("depth", 1))
     delay_ms = int(kwargs.pop("delay_ms", 0))
     paths = ("", "/contacts", "/kontakty") if depth <= 1 else None
-    data = await parse_site(host, depth=depth, delay_ms=delay_ms, paths=paths, **kwargs)
+    data = await parse_site(root, depth=depth, delay_ms=delay_ms, paths=paths, **kwargs)
     if not data.get("ok"):
         return {"ok": False, "error": data.get("error") or "Сайт недоступен"}
     return {

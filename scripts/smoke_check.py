@@ -29,6 +29,20 @@ def check_js_constants() -> None:
     assert "region-preset-add" not in index_html
 
 
+def check_ssl_weak_cert_fallback() -> None:
+    import asyncio
+
+    from server.fetcher import fetch_page
+
+    async def _run() -> None:
+        html, final, code, method = await fetch_page("https://hsmzavod.ru/")
+        assert code == 200, f"expected 200, got {code} ({method})"
+        assert len(html) > 1000, f"expected html body, got {len(html)} bytes"
+        assert "http://" in final or "hsmzavod.ru" in final
+
+    asyncio.run(_run())
+
+
 def check_federal_districts() -> None:
     from server.regions_ru import REGIONS_RU
 
@@ -229,6 +243,7 @@ def check_brief_suggest_strateix() -> None:
 def main() -> None:
     check_js_constants()
     check_federal_districts()
+    check_ssl_weak_cert_fallback()
     check_client_site_urls()
     check_region_exclude()
     check_serp_filters()

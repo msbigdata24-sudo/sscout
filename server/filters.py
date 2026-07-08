@@ -283,6 +283,23 @@ def _html_has_phone_hint(html: str) -> bool:
     return bool(extract_phones(html[:120000], ""))
 
 
+def _is_ssl_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "certificate_verify_failed",
+            "ssl:",
+            "sslerror",
+            "certificate verify failed",
+            "ee certificate key too weak",
+            "certificate has expired",
+            "self signed certificate",
+            "self-signed certificate",
+        )
+    )
+
+
 async def check_site_alive(
     url: str,
     *,
@@ -291,9 +308,13 @@ async def check_site_alive(
 ) -> tuple[bool, str, int]:
     headers = {"User-Agent": USER_AGENT}
     req_timeout = float(timeout if timeout is not None else HTTP_TIMEOUT)
-    try:
+
+    async def _probe(verify: bool) -> tuple[bool, str, int]:
         async with httpx.AsyncClient(
-            timeout=req_timeout, headers=headers, follow_redirects=True,
+            timeout=req_timeout,
+            headers=headers,
+            follow_redirects=True,
+            verify=verify,
         ) as client:
             resp = await client.get(url)
             html = resp.text or ""
@@ -309,7 +330,15 @@ async def check_site_alive(
             if require_phone and not _html_has_phone_hint(html):
                 return False, final, resp.status_code
             return True, final, resp.status_code
-    except Exception:
+
+    try:
+        return await _probe(True)
+    except Exception as exc:
+        if _is_ssl_error(exc):
+            try:
+                return await _probe(False)
+            except Exception:
+                return False, url, 0
         return False, url, 0
 
 
