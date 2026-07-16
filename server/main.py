@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import re
+from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from server.config import (
+    ADMIN_PASSWORD,
     BUILD_VERSION,
     MAX_EXPORT_PHONES,
     PILOT_SEED_DOMAINS,
@@ -22,11 +25,12 @@ from server.config import (
     YANDEX_XML_KEY,
     YANDEX_XML_USER,
 )
+from server.admin_auth import admin_configured, admin_token, verify_admin_token
 from server.phones import normalize_digits
 from server.serp import parse_xmlriver_credentials, probe_xmlriver
 from server.crawler import analyze_client_site, analyze_site_for_brief, normalize_url
 from server.site_survey import SiteSurveyData, suggest_from_survey
-from server.db import db
+from server.db import db, normalize_operator_name
 from server.pipeline import (
     _can_resume_run,
     _prepare_resume_pipeline,
@@ -44,6 +48,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class AdminLoginModel(BaseModel):
+    password: str = ""
+
+
+def _is_admin_request(x_admin_token: str = "") -> bool:
+    return verify_admin_token((x_admin_token or "").strip())
+
+
+def _require_run_access(
+    run_id: str,
+    *,
+    operator: str,
+    x_admin_token: str = "",
+) -> dict[str, Any]:
+    run = db.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Прогон не найден")
+    if _is_admin_request(x_admin_token):
+        return run
+    op = normalize_operator_name(operator)
+    if not op or op == "не указан":
+        raise HTTPException(403, "Укажите ваше имя в брифе или войдите как админ")
+    if not db.operator_can_access_run(run_id, op):
+        raise HTTPException(403, "Нет доступа к этому прогону")
+    return run
 
 
 class BriefModel(BaseModel):
@@ -100,14 +131,29 @@ def health():
         "ok": True,
         "version": BUILD_VERSION,
         "branch": "main",
-        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest", "instructions", "history-log"],
+        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest", "instructions", "history-log", "admin-history"],
         "search_provider": "xmlriver",
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
         "scraping_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
         "proxy_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
+        "admin_configured": admin_configured(),
         "port": PORT,
     }
+
+
+@app.post("/api/admin/login")
+def admin_login(payload: AdminLoginModel):
+    if not admin_configured():
+        raise HTTPException(503, "ADMIN_PASSWORD не задан на сервере — добавьте в Render → Environment")
+    if not hmac.compare_digest(payload.password, ADMIN_PASSWORD):
+        raise HTTPException(401, "Неверный пароль админа")
+    return {"ok": True, "token": admin_token(ADMIN_PASSWORD)}
+
+
+@app.get("/api/admin/status")
+def admin_status(x_admin_token: str = Header(default="", alias="X-Admin-Token")):
+    return {"admin_configured": admin_configured(), "admin": _is_admin_request(x_admin_token)}
 
 
 @app.get("/api/xmlriver/check")
@@ -323,10 +369,12 @@ async def api_resume_run(run_id: str, brief: BriefModel | None = Body(default=No
 
 
 @app.get("/api/results/{run_id}")
-def api_results(run_id: str):
-    run = db.get_run(run_id)
-    if not run:
-        raise HTTPException(404, "Прогон не найден")
+def api_results(
+    run_id: str,
+    operator: str = Query("", description="Имя из брифа — для доступа к своим прогонам"),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
+    run = _require_run_access(run_id, operator=operator, x_admin_token=x_admin_token)
     return {
         "id": run_id,
         "status": run["status"],
@@ -339,15 +387,43 @@ def api_results(run_id: str):
 
 
 @app.get("/api/history")
-def api_history(limit: int = Query(100, ge=1, le=500)):
-    return {"items": db.list_runs(limit), "total": db.count_runs()}
+def api_history(
+    limit: int = Query(100, ge=1, le=500),
+    operator: str = Query("", description="Имя из брифа — только свои прогоны"),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
+    if _is_admin_request(x_admin_token):
+        items = db.list_runs(limit)
+        total = db.count_runs()
+        return {
+            "items": items,
+            "total": total,
+            "scope": "all",
+            "admin": True,
+        }
+    op = normalize_operator_name(operator)
+    if op == "не указан":
+        raise HTTPException(400, "Укажите ваше имя в брифе или войдите как админ")
+    items = db.list_runs(limit, operator=op)
+    total = db.count_runs(operator=op)
+    return {
+        "items": items,
+        "total": total,
+        "scope": "mine",
+        "operator": op,
+        "admin": False,
+    }
 
 
 @app.get("/api/history/compare")
-def api_compare(a: str = Query(...), b: str = Query(...)):
-    ra, rb = db.get_run(a), db.get_run(b)
-    if not ra or not rb:
-        raise HTTPException(404, "Сессия не найдена")
+def api_compare(
+    a: str = Query(...),
+    b: str = Query(...),
+    operator: str = Query("", description="Имя из брифа"),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
+    ra = _require_run_access(a, operator=operator, x_admin_token=x_admin_token)
+    rb = _require_run_access(b, operator=operator, x_admin_token=x_admin_token)
     sa = {r["site"] for r in ra.get("results") or []}
     sb = {r["site"] for r in rb.get("results") or []}
     return {
@@ -388,10 +464,13 @@ def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
     return header, data
 
 
-def _export_rows(run_id: str) -> list[dict]:
-    run = db.get_run(run_id)
-    if not run:
-        raise HTTPException(404, "Прогон не найден")
+def _export_rows(
+    run_id: str,
+    *,
+    operator: str = "",
+    x_admin_token: str = "",
+) -> list[dict]:
+    run = _require_run_access(run_id, operator=operator, x_admin_token=x_admin_token)
     return run.get("results") or []
 
 
@@ -424,11 +503,17 @@ def _content_disposition(filename: str) -> str:
 
 
 @app.get("/api/export/{run_id}.csv")
-def export_csv(run_id: str):
+def export_csv(
+    run_id: str,
+    operator: str = Query(""),
+    admin_token: str = Query("", alias="admin_token"),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
     import csv
     import io
 
-    rows = _export_rows(run_id)
+    token = x_admin_token or admin_token
+    rows = _export_rows(run_id, operator=operator, x_admin_token=token)
     header, data = _export_table(rows)
     buf = io.StringIO()
     buf.write("\ufeff")
@@ -444,12 +529,18 @@ def export_csv(run_id: str):
 
 
 @app.get("/api/export/{run_id}.xlsx")
-def export_xlsx(run_id: str):
+def export_xlsx(
+    run_id: str,
+    operator: str = Query(""),
+    admin_token: str = Query("", alias="admin_token"),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
     import io
 
     from openpyxl import Workbook
 
-    rows = _export_rows(run_id)
+    token = x_admin_token or admin_token
+    rows = _export_rows(run_id, operator=operator, x_admin_token=token)
     header, data = _export_table(rows)
     phone_col_start = 3
     phone_col_count = sum(1 for h in header if h.startswith("Телефон"))

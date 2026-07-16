@@ -64,6 +64,27 @@ def check_analyze_skip_logic() -> None:
     assert "бриф" in err.lower() or "запрос" in err.lower()
 
 
+def check_admin_history() -> None:
+    import uuid
+
+    from server.admin_auth import admin_configured, admin_token, verify_admin_token
+    from server.db import db, normalize_operator_name
+
+    assert normalize_operator_name("") == "не указан"
+    assert normalize_operator_name(" Иван ") == "Иван"
+    token = admin_token("test-admin-pass")
+    assert token
+    assert verify_admin_token(token) is False  # ADMIN_PASSWORD not set in smoke env
+
+    suffix = uuid.uuid4().hex[:8]
+    db.create_run(f"smoke-admin-a-{suffix}", {"operatorName": "Иван", "clientSite": "https://example-a.ru"})
+    db.create_run(f"smoke-admin-b-{suffix}", {"operatorName": "Пётр", "clientSite": "https://example-b.ru"})
+    ivan = db.list_runs(10, operator="Иван")
+    assert any("smoke-admin-a-" in it["id"] for it in ivan)
+    assert all(it["operator_name"].casefold() == "иван" for it in ivan)
+    assert isinstance(admin_configured(), bool)
+
+
 def check_ssl_weak_cert_fallback() -> None:
     import asyncio
 
@@ -281,6 +302,7 @@ def main() -> None:
     check_history_fields()
     check_humanize_fetch_error()
     check_analyze_skip_logic()
+    check_admin_history()
     check_ssl_weak_cert_fallback()
     check_client_site_urls()
     check_region_exclude()

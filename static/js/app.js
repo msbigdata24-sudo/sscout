@@ -75,7 +75,110 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-16-fetch-history-disk";
+  const EXPECTED_BUILD_VERSION = "2026-07-16-admin-history";
+  const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
+  let adminConfigured = false;
+  let isAdminSession = false;
+
+  function getAdminToken() {
+    try {
+      return sessionStorage.getItem(ADMIN_TOKEN_KEY) || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function setAdminToken(token) {
+    try {
+      if (token) sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+      else sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    } catch (_) {}
+    isAdminSession = Boolean(token);
+    updateHistoryAdminUi();
+  }
+
+  function currentOperatorName() {
+    return ($("#operator-name")?.value || brief?.operatorName || "").trim();
+  }
+
+  function apiHeaders(extra = {}) {
+    const headers = { ...extra };
+    const token = getAdminToken();
+    if (token) headers["X-Admin-Token"] = token;
+    return headers;
+  }
+
+  function historyQueryParams(limit = 200) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    const op = currentOperatorName();
+    if (op) params.set("operator", op);
+    return params.toString();
+  }
+
+  async function fetchHistory(limit = 200) {
+    return fetch(`${API_BASE}/api/history?${historyQueryParams(limit)}`, {
+      headers: apiHeaders(),
+    });
+  }
+
+  async function fetchRunResults(runId) {
+    const params = new URLSearchParams();
+    const op = currentOperatorName();
+    if (op) params.set("operator", op);
+    const qs = params.toString();
+    return fetch(`${API_BASE}/api/results/${runId}${qs ? `?${qs}` : ""}`, {
+      headers: apiHeaders(),
+    });
+  }
+
+  function updateHistoryAdminUi() {
+    const bar = $("#history-admin-bar");
+    const loginBtn = $("#btn-admin-login");
+    const logoutBtn = $("#btn-admin-logout");
+    const pwd = $("#admin-password");
+    const scope = $("#history-scope-label");
+    if (!bar) return;
+    bar.hidden = !adminConfigured;
+    const admin = Boolean(getAdminToken());
+    isAdminSession = admin;
+    if (loginBtn) loginBtn.hidden = admin;
+    if (logoutBtn) logoutBtn.hidden = !admin;
+    if (pwd) pwd.hidden = admin;
+    if (scope) {
+      scope.textContent = admin
+        ? "Режим админа: все прогоны на сервере"
+        : "Ваши прогоны (по имени в брифе)";
+      scope.classList.toggle("is-admin", admin);
+    }
+  }
+
+  async function loginAsAdmin() {
+    const password = ($("#admin-password")?.value || "").trim();
+    if (!password) return toast("Введите пароль админа");
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const { ok, data } = await parseApiResponse(res);
+      if (!ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "Неверный пароль");
+      }
+      setAdminToken(data.token || "");
+      if ($("#admin-password")) $("#admin-password").value = "";
+      toast("Вход как админ");
+      if ($("#page-history")?.classList.contains("active")) loadHistory();
+    } catch (e) {
+      toast(e.message || "Не удалось войти");
+    }
+  }
+
+  function logoutAdmin() {
+    setAdminToken("");
+    toast("Режим админа выключен");
+    if ($("#page-history")?.classList.contains("active")) loadHistory();
+  }
 
   function normalizeClientSite(raw) {
     let s = (raw || "").trim();
@@ -438,7 +541,7 @@
 
     if (!apiOnline) return null;
     try {
-      const res = await fetch(`${API_BASE}/api/history?limit=15`);
+      const res = await fetchHistory(15);
       const data = await res.json();
       for (const it of data.items || []) {
         if (siteKey && it.client_site && clientSiteHostKey(it.client_site) !== siteKey) continue;
@@ -900,6 +1003,17 @@
       if (data.xmlriver_configured) parts.push("XMLRiver (ключ в Render)");
     }
     if (data.scraping_configured) parts.push("Scraping ✓");
+    adminConfigured = Boolean(data.admin_configured);
+    if (getAdminToken()) {
+      try {
+        const st = await fetch(`${API_BASE}/api/admin/status`, { headers: apiHeaders() });
+        const status = await st.json();
+        if (!status.admin) setAdminToken("");
+      } catch (_) {
+        setAdminToken("");
+      }
+    }
+    updateHistoryAdminUi();
     rememberDeployVersion(data.version);
     if (data.version) parts.push(`вер. ${data.version}`);
     if (el) {
@@ -991,7 +1105,7 @@
       stopRunTimer();
       saveResumeRunId("");
       setProgressUI(100, "", "done");
-      const rr = await fetch(`${API_BASE}/api/results/${runId}`);
+      const rr = await fetchRunResults(runId);
       const payload = await rr.json();
       results = payload.results || [];
       isLiveRun = true;
@@ -1029,7 +1143,7 @@
         saveResumeRunId(runId);
         currentRunId = runId;
         try {
-          const rr = await fetch(`${API_BASE}/api/results/${runId}`);
+          const rr = await fetchRunResults(runId);
           const payload = await rr.json();
           if ((payload.results || []).length) {
             results = payload.results;
@@ -1341,15 +1455,33 @@
       if (meta) meta.textContent = "";
       return;
     }
-    const res = await fetch(`${API_BASE}/api/history?limit=200`);
+    const res = await fetchHistory(200);
+    if (res.status === 400) {
+      box.innerHTML = "<p class='hint'>Укажите ваше имя в брифе — тогда здесь будут ваши прогоны. Или войдите как админ.</p>";
+      if (meta) meta.textContent = "";
+      updateHistoryAdminUi();
+      return;
+    }
+    if (!res.ok) {
+      box.innerHTML = "<p class='hint'>Не удалось загрузить историю</p>";
+      if (meta) meta.textContent = "";
+      return;
+    }
     const data = await res.json();
     const items = data.items || [];
     const total = data.total ?? items.length;
     if (meta) {
-      meta.textContent = total
-        ? `Всего прогонов на сервере: ${total}. Показано: ${items.length}.`
-        : "Пока нет прогонов на этом сервере.";
+      if (data.admin) {
+        meta.textContent = total
+          ? `Админ: всего прогонов на сервере ${total}. Показано: ${items.length}.`
+          : "Админ: пока нет прогонов на сервере.";
+      } else {
+        meta.textContent = total
+          ? `Ваши прогоны (${data.operator || currentOperatorName()}): ${total}. Показано: ${items.length}.`
+          : `Пока нет ваших прогонов (${data.operator || currentOperatorName() || "укажите имя в брифе"}).`;
+      }
     }
+    updateHistoryAdminUi();
     if (!items.length) {
       box.innerHTML = "<p class='hint'>Пока нет прогонов</p>";
       return;
@@ -1391,7 +1523,7 @@
     box.querySelectorAll("[data-load-run]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.loadRun;
-        const r = await fetch(`${API_BASE}/api/results/${id}`);
+        const r = await fetchRunResults(id);
         const p = await r.json();
         results = p.results || [];
         currentRunId = id;
@@ -1408,7 +1540,12 @@
     const a = $("#compare-a").value;
     const b = $("#compare-b").value;
     if (!a || !b) return toast("Выберите две сессии");
-    const res = await fetch(`${API_BASE}/api/history/compare?a=${a}&b=${b}`);
+    const params = new URLSearchParams({ a, b });
+    const op = currentOperatorName();
+    if (op) params.set("operator", op);
+    const res = await fetch(`${API_BASE}/api/history/compare?${params}`, {
+      headers: apiHeaders(),
+    });
     const data = await res.json();
     $("#compare-result").innerHTML = `
       <p><strong>Новые:</strong> ${data.new_sites.length ? data.new_sites.join(", ") : "—"}</p>
@@ -1515,13 +1652,23 @@
     }
   }
 
+  function exportUrl(ext) {
+    const params = new URLSearchParams();
+    const op = currentOperatorName();
+    if (op) params.set("operator", op);
+    const token = getAdminToken();
+    if (token) params.set("admin_token", token);
+    const qs = params.toString();
+    return `${API_BASE}/api/export/${currentRunId}.${ext}${qs ? `?${qs}` : ""}`;
+  }
+
   function exportCsv() {
-    if (currentRunId && apiOnline) window.open(`${API_BASE}/api/export/${currentRunId}.csv`, "_blank");
+    if (currentRunId && apiOnline) window.open(exportUrl("csv"), "_blank");
     else toast("Нет активного прогона");
   }
 
   function exportXls() {
-    if (currentRunId && apiOnline) window.open(`${API_BASE}/api/export/${currentRunId}.xlsx`, "_blank");
+    if (currentRunId && apiOnline) window.open(exportUrl("xlsx"), "_blank");
     else toast("Нет активного прогона");
   }
 
@@ -1702,6 +1849,11 @@
     $("#group-regions")?.addEventListener("change", () => renderTable(results));
     $("#btn-export").addEventListener("click", exportCsv);
     $("#btn-export-xls").addEventListener("click", exportXls);
+    $("#btn-admin-login")?.addEventListener("click", loginAsAdmin);
+    $("#btn-admin-logout")?.addEventListener("click", logoutAdmin);
+    $("#admin-password")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loginAsAdmin();
+    });
     $("#btn-prev-page")?.addEventListener("click", () => { if (tablePage > 1) { tablePage--; renderTable(results); } });
     $("#btn-next-page")?.addEventListener("click", () => { tablePage++; renderTable(results); });
 

@@ -950,6 +950,34 @@
       word-break: break-all;
     }
 
+    .history-admin-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(61, 139, 253, 0.06);
+    }
+
+    .history-admin-bar input[type="password"] {
+      min-width: 180px;
+      max-width: 240px;
+    }
+
+    .history-scope-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+
+    .history-scope-label.is-admin {
+      color: var(--success);
+      font-weight: 700;
+    }
+
     .status-pill {
       display: inline-block;
       padding: 3px 8px;
@@ -1275,9 +1303,15 @@
       <section class="page" id="page-history">
         <header class="page-head">
           <h2>История запросов</h2>
-          <p>Все запуски на этом сервере: кто запускал, для какого клиента, какие поисковые запросы и когда.</p>
+          <p>Ваши запуски — по имени из брифа. Админ видит все прогоны на сервере.</p>
         </header>
         <div class="card">
+          <div class="history-admin-bar" id="history-admin-bar" hidden>
+            <input type="password" id="admin-password" placeholder="Пароль админа" autocomplete="current-password">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-admin-login">Войти как админ</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-admin-logout" hidden>Выйти</button>
+            <span class="history-scope-label" id="history-scope-label"></span>
+          </div>
           <p class="history-meta" id="history-meta">Загрузка…</p>
           <div id="history-list"></div>
         </div>

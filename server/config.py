@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-16-fetch-history-disk"
+BUILD_VERSION = "2026-07-16-admin-history"
 
 MAX_EXPORT_PHONES = 6
 
@@ -23,6 +23,7 @@ YANDEX_XML_USER = os.getenv("YANDEX_XML_USER", "").strip()
 YANDEX_XML_KEY = os.getenv("YANDEX_XML_KEY", "").strip()
 SCRAPINGBEE_API_KEY = os.getenv("SCRAPINGBEE_API_KEY", "").strip()
 SCRAPINGFISH_API_KEY = os.getenv("SCRAPINGFISH_API_KEY", "").strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 PORT = int(os.getenv("PORT") or os.getenv("SIGNAL_SCOUT_PORT") or "8765")
 CRAWL_CONCURRENCY = max(1, min(15, int(os.getenv("CRAWL_CONCURRENCY", "5"))))
 FILTER_ALIVE_CONCURRENCY = max(4, min(20, int(os.getenv("FILTER_ALIVE_CONCURRENCY", "12"))))

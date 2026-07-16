@@ -21,3 +21,5 @@ services:
         sync: false
       - key: XMLRIVER_KEY
         sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
