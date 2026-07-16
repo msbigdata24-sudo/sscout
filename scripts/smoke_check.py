@@ -49,6 +49,21 @@ def check_history_fields() -> None:
         assert "status_label" in it
 
 
+def check_humanize_fetch_error() -> None:
+    from server.fetcher import humanize_fetch_error
+
+    assert "пустую страницу" in humanize_fetch_error("error:empty")
+    assert "HTTP 403" in humanize_fetch_error("error:HTTP 403")
+    assert humanize_fetch_error("unreachable").startswith("Сайт")
+
+
+def check_analyze_skip_logic() -> None:
+    from server.fetcher import humanize_fetch_error
+
+    err = humanize_fetch_error("error:empty")
+    assert "бриф" in err.lower() or "запрос" in err.lower()
+
+
 def check_ssl_weak_cert_fallback() -> None:
     import asyncio
 
@@ -264,6 +279,8 @@ def main() -> None:
     check_js_constants()
     check_federal_districts()
     check_history_fields()
+    check_humanize_fetch_error()
+    check_analyze_skip_logic()
     check_ssl_weak_cert_fallback()
     check_client_site_urls()
     check_region_exclude()

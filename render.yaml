@@ -7,9 +7,16 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
+    # SQLite (история прогонов) — только под mountPath сохраняется между деплоями.
+    disk:
+      name: sscout-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
+      - key: SIGNAL_SCOUT_DB_PATH
+        value: /opt/render/project/src/data/signal_scout.db
       - key: XMLRIVER_USER
         sync: false
       - key: XMLRIVER_KEY

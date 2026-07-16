@@ -8,7 +8,7 @@ from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
-from server.fetcher import fetch_page
+from server.fetcher import fetch_page, humanize_fetch_error
 from server.phones import extract_phones, pick_phones_enriched
 
 LogFn = Callable[[str, str | None, str], Awaitable[None] | None]
@@ -199,7 +199,7 @@ async def parse_site(
             url, use_proxy=use_proxy, delay_ms=delay_ms
         )
         if not html:
-            last_error = method
+            last_error = humanize_fetch_error(method)
             page_path = urlparse(url).path or "/"
             if _is_home_page(url):
                 await log(f"Ошибка {site}: {method}", "error")
@@ -243,7 +243,7 @@ async def parse_site(
         return {
             "ok": False,
             "site": domain_from_crawl(root, site),
-            "error": last_error or "unreachable",
+            "error": humanize_fetch_error(last_error or "unreachable"),
             "phones": [],
             "phones_meta": [],
             "title": "",
@@ -438,7 +438,7 @@ async def analyze_site_for_brief(site_url: str) -> dict:
         return {"ok": False, "error": "Некорректный URL"}
     html, final_url, code, method = await fetch_page(root, use_proxy=False, delay_ms=0)
     if not html or code >= 400:
-        return {"ok": False, "error": method or f"Сайт недоступен ({code or 'нет ответа'})"}
+        return {"ok": False, "error": humanize_fetch_error(method or f"Сайт недоступен ({code or 'нет ответа'})")}
 
     soup = BeautifulSoup(html, "html.parser")
     meta = _extract_brief_meta(soup, html)

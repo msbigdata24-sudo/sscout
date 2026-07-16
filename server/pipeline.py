@@ -19,6 +19,7 @@ from server.config import (
 )
 from server.crawler import analyze_client_site, parse_site
 from server.db import db
+from server.fetcher import humanize_fetch_error
 from server.filters import (
     check_site_alive,
     classify_domain,
@@ -56,7 +57,7 @@ def _error_message(exc: BaseException) -> str:
         return "Таймаут сети — сайт или XMLRiver не ответил вовремя. Нажмите «Продолжить сбор»."
     if "ReadTimeout" in msg or "ConnectTimeout" in msg:
         return "Таймаут сети — сайт или XMLRiver не ответил вовремя. Нажмите «Продолжить сбор»."
-    return msg or name
+    return humanize_fetch_error(msg) if msg else name
 
 
 def _parse_queries(brief: dict[str, Any]) -> list[str]:
@@ -407,14 +408,32 @@ async def run_pipeline(run_id: str, brief: dict[str, Any], *, resume: bool = Fal
                 on_log=client_log,
             )
             if not analysis.get("ok"):
-                raise RuntimeError(analysis.get("error") or "Не удалось разобрать сайт клиента")
-            niche = brief.get("niche") or analysis.get("title") or ""
-            _set_step(
-                pipeline, "analyze", "done",
-                f"Сайт: {analysis.get('site_url')} · {niche.strip()}",
-            )
-            _log(pipeline, f"Ниша: {niche.strip()}", status="success")
-            await _persist(run_id, pipeline)
+                err = humanize_fetch_error(analysis.get("error") or "Не удалось разобрать сайт клиента")
+                niche_filled = bool(str(brief.get("niche") or "").strip())
+                can_skip_analyze = bool(
+                    brief.get("quickCrawl") or had_queries_in_brief or niche_filled or queries
+                )
+                if can_skip_analyze:
+                    _set_step(
+                        pipeline,
+                        "analyze",
+                        "done",
+                        "Сайт с сервера недоступен — продолжаем по брифу",
+                    )
+                    _log(pipeline, f"Разбор сайта клиента пропущен: {err}", status="info")
+                    await _persist(run_id, pipeline)
+                else:
+                    raise RuntimeError(
+                        f"{err} Заполните нишу и поисковые запросы в брифе или проверьте URL."
+                    )
+            else:
+                niche = brief.get("niche") or analysis.get("title") or ""
+                _set_step(
+                    pipeline, "analyze", "done",
+                    f"Сайт: {analysis.get('site_url')} · {niche.strip()}",
+                )
+                _log(pipeline, f"Ниша: {niche.strip()}", status="success")
+                await _persist(run_id, pipeline)
 
         # ── 2 serp ──
         if quick_crawl and not _step_done(pipeline, "serp"):

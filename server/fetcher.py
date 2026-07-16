@@ -16,12 +16,46 @@ USER_AGENTS = [
 ]
 
 
-def _headers() -> dict[str, str]:
-    return {
+def _headers(url: str = "") -> dict[str, str]:
+    parsed = urlparse(url) if url else None
+    origin = ""
+    if parsed and parsed.scheme and parsed.netloc:
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+    headers = {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
     }
+    if origin:
+        headers["Referer"] = origin + "/"
+    return headers
+
+
+def humanize_fetch_error(raw: str) -> str:
+    """Понятное сообщение вместо error:empty / error:HTTP 403."""
+    msg = (raw or "").strip()
+    if msg.startswith("error:"):
+        msg = msg[6:].strip()
+    lowered = msg.lower()
+    if msg == "empty" or lowered == "unreachable":
+        return (
+            "Сайт не ответил или отдал пустую страницу "
+            "(часто блокирует облачные серверы Render). "
+            "Если в брифе есть запросы — сбор продолжится без разбора сайта."
+        )
+    if lowered.startswith("http "):
+        code = msg.split()[-1] if msg.split() else ""
+        if code in ("403", "401"):
+            return f"Сайт вернул HTTP {code} — доступ с сервера запрещён."
+        if code == "404":
+            return "Страница не найдена (HTTP 404)."
+        if code.isdigit() and int(code) >= 500:
+            return f"Сайт недоступен (HTTP {code})."
+        return f"Сайт недоступен ({msg})."
+    if "timeout" in lowered or "timed out" in lowered:
+        return "Таймаут — сайт не ответил вовремя."
+    return msg or "Сайт недоступен"
 
 
 def _is_ssl_error(exc: BaseException) -> bool:
@@ -106,8 +140,24 @@ async def _direct_get(
     method: str,
 ) -> tuple[str, str, int, str] | None:
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=verify) as client:
-        resp = await client.get(url, headers=_headers())
+        resp = await client.get(url, headers=_headers(url))
         return _page_ok(resp, method=method)
+
+
+async def _via_proxy_apis(
+    client: httpx.AsyncClient,
+    candidates: list[str],
+) -> tuple[str, str, int, str] | None:
+    code = 0
+    for candidate in candidates:
+        html, code = await _via_scrapingbee(client, candidate)
+        if html:
+            return html, candidate, code, "scrapingbee"
+
+        html, code = await _via_scrapingfish(client, candidate)
+        if html:
+            return html, candidate, code, "scrapingfish"
+    return None
 
 
 async def fetch_page(
@@ -123,6 +173,8 @@ async def fetch_page(
     timeout = httpx.Timeout(SITE_TIMEOUT, connect=min(10, SITE_TIMEOUT))
     last_error = ""
     candidates = _candidate_urls(url)
+
+    proxy_ready = bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY)
 
     for attempt in range(1, FETCH_RETRIES + 1):
         try:
@@ -154,22 +206,16 @@ async def fetch_page(
                             last_error = str(exc2)
                             continue
 
-                if attempt < FETCH_RETRIES:
-                    await asyncio.sleep(0.8 * attempt)
-                    continue
+            if proxy_ready:
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                    got = await _via_proxy_apis(client, candidates)
+                    if got:
+                        return got
+                    last_error = last_error or "empty"
 
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-                code = 0
-                for candidate in candidates:
-                    html, code = await _via_scrapingbee(client, candidate)
-                    if html:
-                        return html, candidate, code, "scrapingbee"
-
-                    html, code = await _via_scrapingfish(client, candidate)
-                    if html:
-                        return html, candidate, code, "scrapingfish"
-
-                last_error = f"HTTP {code}" if code else (last_error or "empty")
+            if attempt < FETCH_RETRIES:
+                await asyncio.sleep(0.8 * attempt)
+                continue
         except Exception as exc:
             last_error = str(exc)
             if attempt < FETCH_RETRIES:
