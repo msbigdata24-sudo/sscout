@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-16-admin-history";
+  const EXPECTED_BUILD_VERSION = "2026-07-17-brief-download";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -695,6 +695,101 @@
       o.selected = src.includes(o.value);
     });
     fillRegionFilter(data.regions);
+  }
+
+  function briefDownloadBasename(data) {
+    const raw = (data.clientName || data.clientSite || "brief").trim();
+    const host = (() => {
+      try {
+        return new URL(data.clientSite || "").hostname.replace(/^www\./, "");
+      } catch (_) {
+        return "";
+      }
+    })();
+    const base = (raw || host || "brief")
+      .replace(/[<>:"/\\|?*\n\r\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 60) || "brief";
+    const date = new Date().toISOString().slice(0, 10);
+    return `signal-scout-brief ${base} ${date}.json`;
+  }
+
+  function downloadBriefFile() {
+    const data = readForm();
+    if (!(data.operatorName || "").trim()) {
+      toast("Укажите ваше имя в поле «Кто запускает»");
+      $("#operator-name")?.focus();
+      return;
+    }
+    if (!isValidClientSite(data.clientSite)) {
+      toast("Сначала укажите корректный URL сайта клиента");
+      $("#client-site")?.focus();
+      return;
+    }
+    $("#client-site").value = data.clientSite;
+    window.SSStorage.saveBrief(data);
+    brief = data;
+    updateRunUI();
+
+    const payload = {
+      format: "signal-scout-brief",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      brief: data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = briefDownloadBasename(data);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("Бриф скачан — файл в папке «Загрузки»");
+  }
+
+  function applyBriefFromFile(raw) {
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      throw new Error("Файл не похож на JSON-бриф");
+    }
+    const data = parsed && typeof parsed === "object" && parsed.brief
+      ? parsed.brief
+      : parsed;
+    if (!data || typeof data !== "object") {
+      throw new Error("В файле нет данных брифа");
+    }
+    const merged = ensureBriefQueries({
+      ...EMPTY_BRIEF,
+      ...data,
+      clientSite: normalizeClientSite(data.clientSite || ""),
+    });
+    if (!isValidClientSite(merged.clientSite)) {
+      throw new Error("В файле нет корректного сайта клиента");
+    }
+    fillForm(merged);
+    $("#client-site").value = merged.clientSite;
+    brief = readForm();
+    window.SSStorage.saveBrief(brief);
+    fillRegionFilter(brief.regions);
+    updateRunUI();
+  }
+
+  async function uploadBriefFile(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      applyBriefFromFile(text);
+      toast("Бриф загружен из файла и сохранён в браузере");
+    } catch (e) {
+      toast(e.message || "Не удалось прочитать файл");
+    }
   }
 
   function fillRegionFilter(regionsStr) {
@@ -1803,6 +1898,16 @@
       if (hint) hint.textContent = "";
       updateRunUI();
       toast("Бриф очищен — можно заполнить заново");
+    });
+
+    $("#btn-download-brief")?.addEventListener("click", downloadBriefFile);
+    $("#btn-upload-brief")?.addEventListener("click", () => {
+      $("#brief-file-input")?.click();
+    });
+    $("#brief-file-input")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      uploadBriefFile(file);
     });
 
     $("#client-site").addEventListener("blur", () => {

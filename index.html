@@ -1202,6 +1202,9 @@
 
           <div class="actions">
             <button type="submit" class="btn btn-primary">Сохранить бриф</button>
+            <button type="button" class="btn btn-ghost" id="btn-download-brief">Скачать бриф</button>
+            <button type="button" class="btn btn-ghost" id="btn-upload-brief">Загрузить из файла</button>
+            <input type="file" id="brief-file-input" accept=".json,application/json" hidden>
             <button type="button" class="btn btn-ghost" id="btn-clear-brief">Очистить бриф</button>
             <button type="button" class="btn btn-ghost" id="btn-reset-pilot">Загрузить пример брифа</button>
           </div>
@@ -1333,6 +1336,7 @@
           <li>Выберите <strong>регионы по федеральным округам</strong> (ЦФО, СФО и т.д.) — как клиент планирует ГЕО.</li>
           <li>Проверьте <strong>поисковые запросы</strong> — только коммерческие («изготовление…», «аренда…»), без бренда клиента.</li>
           <li>Нажмите <strong>«Сохранить бриф»</strong> перед запуском.</li>
+          <li>Нужна копия на компьютер — <strong>«Скачать бриф»</strong> (файл JSON). Потом можно вернуть через <strong>«Загрузить из файла»</strong>.</li>
         </ol>
 
         <h4>Шаг 2 — Запуск</h4>

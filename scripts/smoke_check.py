@@ -30,6 +30,11 @@ def check_js_constants() -> None:
     assert 'id="btn-instructions"' in index_html
     assert 'id="instructions-modal"' in index_html
     assert 'id="operator-name"' in index_html
+    assert 'id="btn-download-brief"' in index_html
+    assert 'id="btn-upload-brief"' in index_html
+    assert "downloadBriefFile" in app_js
+    assert "uploadBriefFile" in app_js
+    assert "signal-scout-brief" in app_js
 
 
 def check_history_fields() -> None:
