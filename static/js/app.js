@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-17-filter-speed";
+  const EXPECTED_BUILD_VERSION = "2026-07-17-history-open-run";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -1735,25 +1735,111 @@
               <td>${it.sites_count}</td>
               <td>${it.phones_count}</td>
               <td><span class="status-pill ${escapeHtml(it.status || "")}">${escapeHtml(it.status_label || it.status || "—")}</span></td>
-              <td><button type="button" class="btn btn-ghost btn-sm" data-load-run="${escapeHtml(it.id)}">Открыть</button></td>
+              <td><span class="status-pill ${escapeHtml(it.status || "")}">${escapeHtml(it.status_label || it.status || "—")}</span></td>
+              <td class="history-actions">
+                <button type="button" class="btn btn-ghost btn-sm" data-open-run="${escapeHtml(it.id)}">${
+                  it.status === "running" || it.status === "pending"
+                    ? "К сбору"
+                    : it.status === "stopped" || it.status === "error"
+                      ? "Продолжить"
+                      : "Открыть"
+                }</button>
+                ${it.status === "running" || it.status === "pending"
+                  ? `<button type="button" class="btn btn-ghost btn-sm" data-stop-run="${escapeHtml(it.id)}">Остановить</button>`
+                  : ""}
+              </td>
             </tr>`).join("")}
         </tbody>
       </table>`;
 
-    box.querySelectorAll("[data-load-run]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.loadRun;
-        const r = await fetchRunResults(id);
-        const p = await r.json();
-        results = p.results || [];
-        currentRunId = id;
-        isLiveRun = !p.is_demo;
-        window.SSStorage.saveResults(results);
-        enableResultsUI();
-        $("#results-subtitle").textContent = `${p.brief?.clientName || brief.clientName} · ${results.length} строк`;
-        showPage("results");
-      });
+    box.querySelectorAll("[data-open-run]").forEach((btn) => {
+      btn.addEventListener("click", () => openHistoryRun(btn.dataset.openRun));
     });
+    box.querySelectorAll("[data-stop-run]").forEach((btn) => {
+      btn.addEventListener("click", () => stopHistoryRun(btn.dataset.stopRun));
+    });
+  }
+
+  async function openHistoryRun(id) {
+    if (!id) return;
+    try {
+      const st = await fetch(`${API_BASE}/api/run/${id}`, { headers: apiHeaders() });
+      if (!st.ok) throw new Error("Не удалось открыть прогон");
+      const info = await st.json();
+
+      const rr = await fetchRunResults(id);
+      if (!rr.ok) {
+        const errBody = await rr.json().catch(() => ({}));
+        throw new Error(typeof errBody.detail === "string" ? errBody.detail : "Нет доступа к прогону");
+      }
+      const payload = await rr.json();
+      const runBrief = payload.brief || {};
+      if (runBrief.clientSite || runBrief.operatorName) {
+        fillForm({ ...EMPTY_BRIEF, ...runBrief });
+        brief = readForm();
+        window.SSStorage.saveBrief(brief);
+        fillRegionFilter(brief.regions);
+        updateRunUI();
+      }
+
+      results = payload.results || [];
+      currentRunId = id;
+      isLiveRun = !payload.is_demo;
+      window.SSStorage.saveResults(results);
+
+      if (info.status === "running" || info.status === "pending") {
+        saveResumeRunId(id);
+        showPage("run");
+        setRunButtons(true);
+        startRunTimer();
+        await showRunState(id, info.status);
+        await startPolling(id);
+        toast("Открыт идущий сбор — можно остановить или дождаться конца");
+        return;
+      }
+
+      if (info.status === "stopped" || info.status === "error") {
+        saveResumeRunId(id);
+        pendingResumeRunId = id;
+        showPage("run");
+        setRunButtons(false);
+        await showRunState(id, info.status);
+        await refreshStartButtonLabel();
+        toast(info.status === "error"
+          ? "Прогон с ошибкой — нажмите «Продолжить сбор»"
+          : "Прогон остановлен — нажмите «Продолжить сбор»");
+        return;
+      }
+
+      enableResultsUI();
+      $("#results-subtitle").textContent = `${runBrief.clientName || brief?.clientName || "Клиент"} · ${results.length} строк`;
+      showPage("results");
+      toast(results.length ? "Результаты открыты" : "Прогон готов, строк пока нет");
+    } catch (e) {
+      toast(e.message || "Не удалось открыть прогон");
+    }
+  }
+
+  async function stopHistoryRun(id) {
+    if (!id) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/run/${id}/stop`, { method: "POST", headers: apiHeaders() });
+      const { ok, data } = await parseApiResponse(res);
+      if (!ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "Не удалось остановить");
+      }
+      toast("Сбор остановлен — можно открыть и продолжить");
+      await loadHistory();
+      if (currentRunId === id) {
+        saveResumeRunId(id);
+        pendingResumeRunId = id;
+        await showRunState(id, "stopped");
+        setRunButtons(false);
+        await refreshStartButtonLabel();
+      }
+    } catch (e) {
+      toast(e.message || "Ошибка остановки");
+    }
   }
 
   async function compareSessions() {

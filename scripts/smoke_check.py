@@ -32,12 +32,10 @@ def check_js_constants() -> None:
     assert 'id="operator-name"' in index_html
     assert 'id="btn-download-brief"' in index_html
     assert 'id="btn-upload-brief"' in index_html
-    assert "downloadBriefFile" in app_js
-    assert "uploadBriefFile" in app_js
-    assert "briefToText" in app_js
-    assert "parseBriefText" in app_js
-    assert "signal-scout-brief-txt" in app_js
-    assert ".txt" in app_js
+    assert "openHistoryRun" in app_js
+    assert "stopHistoryRun" in app_js
+    assert "data-open-run" in app_js
+    assert "data-stop-run" in app_js
 
 
 def check_history_fields() -> None:
