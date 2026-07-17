@@ -34,7 +34,10 @@ def check_js_constants() -> None:
     assert 'id="btn-upload-brief"' in index_html
     assert "downloadBriefFile" in app_js
     assert "uploadBriefFile" in app_js
-    assert "signal-scout-brief" in app_js
+    assert "briefToText" in app_js
+    assert "parseBriefText" in app_js
+    assert "signal-scout-brief-txt" in app_js
+    assert ".txt" in app_js
 
 
 def check_history_fields() -> None:

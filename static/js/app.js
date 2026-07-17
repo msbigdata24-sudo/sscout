@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-17-brief-download";
+  const EXPECTED_BUILD_VERSION = "2026-07-17-brief-txt";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -712,7 +712,122 @@
       .trim()
       .slice(0, 60) || "brief";
     const date = new Date().toISOString().slice(0, 10);
-    return `signal-scout-brief ${base} ${date}.json`;
+    return `signal-scout-brief ${base} ${date}.txt`;
+  }
+
+  const BRIEF_TXT_LABELS = {
+    operatorName: "Кто запускает",
+    clientName: "Клиент",
+    clientSite: "Сайт клиента",
+    niche: "Ниша",
+    regionMode: "Режим регионов",
+    regions: "Регионы",
+    queries: "Поисковые запросы",
+    excludeDomains: "Исключить домены",
+    phoneFilter: "Фильтр телефонов",
+    sources: "Источники",
+    checkAlive: "Проверка живого сайта",
+    maxSites: "Макс. сайтов",
+    crawlDepth: "Глубина обхода",
+    requestDelayMs: "Пауза между запросами (мс)",
+    useProxy: "Прокси",
+    xmlRiverUser: "XMLRiver ID",
+    apiKey: "XMLRiver ключ",
+  };
+
+  const BRIEF_TXT_KEYS = Object.keys(BRIEF_TXT_LABELS);
+
+  function briefToText(data) {
+    const lines = [
+      "Сигнал-Скаут — бриф",
+      `Экспорт: ${new Date().toLocaleString("ru-RU")}`,
+      "Формат: signal-scout-brief-txt v1",
+      "",
+    ];
+    for (const key of BRIEF_TXT_KEYS) {
+      const label = BRIEF_TXT_LABELS[key];
+      let value = data[key];
+      if (key === "sources" && Array.isArray(value)) value = value.join(", ");
+      if (typeof value === "boolean") value = value ? "да" : "нет";
+      if (value == null) value = "";
+      value = String(value);
+      if (value.includes("\n")) {
+        lines.push(`${label}:`);
+        lines.push("---");
+        lines.push(value.replace(/\r\n/g, "\n").replace(/\r/g, "\n"));
+        lines.push("---");
+      } else {
+        lines.push(`${label}: ${value}`);
+      }
+    }
+    return lines.join("\n") + "\n";
+  }
+
+  function parseBriefBool(raw) {
+    const s = String(raw || "").trim().toLowerCase();
+    if (["да", "yes", "true", "1", "on"].includes(s)) return true;
+    if (["нет", "no", "false", "0", "off"].includes(s)) return false;
+    return null;
+  }
+
+  function parseBriefText(raw) {
+    const labelToKey = {};
+    for (const [key, label] of Object.entries(BRIEF_TXT_LABELS)) {
+      labelToKey[label.toLowerCase()] = key;
+      labelToKey[key.toLowerCase()] = key;
+    }
+    const data = {};
+    const lines = String(raw || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("Сигнал-Скаут")
+        || trimmed.startsWith("Экспорт:") || trimmed.startsWith("Формат:")) {
+        i += 1;
+        continue;
+      }
+      const colon = line.indexOf(":");
+      if (colon < 0) {
+        i += 1;
+        continue;
+      }
+      const label = line.slice(0, colon).trim();
+      const key = labelToKey[label.toLowerCase()];
+      if (!key) {
+        i += 1;
+        continue;
+      }
+      let rest = line.slice(colon + 1).trim();
+      if (!rest && lines[i + 1]?.trim() === "---") {
+        i += 2;
+        const block = [];
+        while (i < lines.length && lines[i].trim() !== "---") {
+          block.push(lines[i]);
+          i += 1;
+        }
+        if (lines[i]?.trim() === "---") i += 1;
+        data[key] = block.join("\n").trim();
+        continue;
+      }
+      data[key] = rest;
+      i += 1;
+    }
+    if (data.sources != null && typeof data.sources === "string") {
+      data.sources = data.sources.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+    }
+    if (data.checkAlive != null) {
+      const b = parseBriefBool(data.checkAlive);
+      if (b !== null) data.checkAlive = b;
+    }
+    if (data.useProxy != null) {
+      const b = parseBriefBool(data.useProxy);
+      if (b !== null) data.useProxy = b;
+    }
+    ["maxSites", "crawlDepth", "requestDelayMs"].forEach((k) => {
+      if (data[k] != null && data[k] !== "") data[k] = Number(data[k]) || data[k];
+    });
+    return data;
   }
 
   function downloadBriefFile() {
@@ -732,15 +847,8 @@
     brief = data;
     updateRunUI();
 
-    const payload = {
-      format: "signal-scout-brief",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      brief: data,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json;charset=utf-8",
-    });
+    const text = briefToText(data);
+    const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -749,19 +857,28 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast("Бриф скачан — файл в папке «Загрузки»");
+    toast("Бриф скачан — текстовый файл в «Загрузках»");
   }
 
   function applyBriefFromFile(raw) {
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (_) {
-      throw new Error("Файл не похож на JSON-бриф");
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) throw new Error("Файл пустой");
+
+    let data = null;
+    if (trimmed.startsWith("{")) {
+      let parsed;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch (_) {
+        throw new Error("Не удалось прочитать файл брифа");
+      }
+      data = parsed && typeof parsed === "object" && parsed.brief
+        ? parsed.brief
+        : parsed;
+    } else {
+      data = parseBriefText(trimmed);
     }
-    const data = parsed && typeof parsed === "object" && parsed.brief
-      ? parsed.brief
-      : parsed;
+
     if (!data || typeof data !== "object") {
       throw new Error("В файле нет данных брифа");
     }
