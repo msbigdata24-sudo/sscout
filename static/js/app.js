@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-17-brief-txt";
+  const EXPECTED_BUILD_VERSION = "2026-07-17-filter-speed";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -1306,7 +1306,11 @@
     }
     if (!res.ok) throw new Error("Статус недоступен");
     const data = await res.json();
-    const stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    let stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    const fp = data.pipeline?.filter_progress;
+    if (data.current_step === "filter" && fp && fp.total) {
+      stepLabel = `Фильтры: ${fp.checked || 0}/${fp.total} · живых ${fp.alive || 0}`;
+    }
     applyPipeline(data.pipeline || {}, data.progress || 0, {
       status: data.status,
       current_step_label: stepLabel ? `Сейчас: ${stepLabel}…` : "",
@@ -1454,7 +1458,11 @@
     const res = await fetch(`${API_BASE}/api/run/${runId}`);
     if (!res.ok) return null;
     const data = await res.json();
-    const stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    let stepLabel = data.current_step ? stepTitle(data.current_step) : "";
+    const fp = data.pipeline?.filter_progress;
+    if (data.current_step === "filter" && fp && fp.total) {
+      stepLabel = `Фильтры: ${fp.checked || 0}/${fp.total} · живых ${fp.alive || 0}`;
+    }
     applyPipeline(data.pipeline || {}, data.progress || 0, {
       status: statusHint || data.status,
       current_step_label: stepLabel ? `Сейчас: ${stepLabel}…` : "",

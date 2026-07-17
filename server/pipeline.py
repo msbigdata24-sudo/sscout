@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +10,7 @@ from server.config import (
     CRAWL_CONCURRENCY,
     DEFAULT_MAX_SITES,
     DEFAULT_PILOT_QUERIES,
+    FILTER_ALIVE_BUDGET_SEC,
     FILTER_ALIVE_CONCURRENCY,
     FILTER_ALIVE_TIMEOUT,
     PHONES_OVERFLOW_THRESHOLD,
@@ -173,64 +175,128 @@ async def _filter_alive_candidates(
     max_sites: int,
     check_alive: bool,
 ) -> list[dict]:
-    """Параллельная проверка доступности — не зависаем на 200+ сайтах."""
+    """Проверка «живой сайт» батчами — не крутим час на мёртвых доменах с Render."""
     if not check_alive:
         return candidates[:max_sites]
 
-    check_limit = min(len(candidates), max(max_sites * 2, max_sites + 40))
+    # Не больше чем нужно для набора max_sites (+ небольшой запас на мёртвые).
+    check_limit = min(len(candidates), max(max_sites + 20, int(max_sites * 1.4)))
     to_check = candidates[:check_limit]
+    rest = candidates[check_limit:]
+
     if len(candidates) > check_limit:
         _log(
             pipeline,
-            f"Проверка доступности: {check_limit} из {len(candidates)} кандидатов "
-            f"(лимит брифа {max_sites})",
+            f"Проверка доступности: до {check_limit} из {len(candidates)} кандидатов "
+            f"(нужно до {max_sites} живых, лимит времени {FILTER_ALIVE_BUDGET_SEC} сек)",
             status="info",
         )
+    else:
+        _log(
+            pipeline,
+            f"Проверка доступности: {len(to_check)} кандидатов "
+            f"(лимит времени {FILTER_ALIVE_BUDGET_SEC} сек)",
+            status="info",
+        )
+    await _persist(run_id, pipeline)
 
     alive_candidates: list[dict] = []
-    lock = asyncio.Lock()
-    sem = asyncio.Semaphore(FILTER_ALIVE_CONCURRENCY)
+    dead_count = 0
     checked = 0
+    started = time.monotonic()
+    batch_size = FILTER_ALIVE_CONCURRENCY
 
-    async def one(cand: dict) -> None:
-        nonlocal checked
-        if _is_stopped(run_id):
-            return
-        async with lock:
-            if len(alive_candidates) >= max_sites:
-                return
-
+    async def probe(cand: dict) -> tuple[dict, bool, str]:
         domain = cand["domain"]
         url = cand["urls"][0] if cand.get("urls") else f"https://{domain}"
-        async with sem:
-            alive, final_url, _code = await check_site_alive(
-                url, require_phone=False, timeout=FILTER_ALIVE_TIMEOUT,
+        try:
+            alive, final_url, _code = await asyncio.wait_for(
+                check_site_alive(
+                    url, require_phone=False, timeout=FILTER_ALIVE_TIMEOUT,
+                ),
+                timeout=FILTER_ALIVE_TIMEOUT + 2,
             )
+        except asyncio.TimeoutError:
+            return cand, False, ""
+        except Exception:
+            return cand, False, ""
+        return cand, alive, final_url if alive else ""
 
-        async with lock:
+    idx = 0
+    while idx < len(to_check) and len(alive_candidates) < max_sites:
+        if _is_stopped(run_id):
+            break
+        elapsed = time.monotonic() - started
+        if elapsed >= FILTER_ALIVE_BUDGET_SEC:
+            _log(
+                pipeline,
+                f"Фильтр: лимит времени {FILTER_ALIVE_BUDGET_SEC} сек — "
+                f"проверено {checked}, живых {len(alive_candidates)}. "
+                "Остальные берём без проверки доступности.",
+                status="info",
+            )
+            break
+
+        batch = to_check[idx:idx + batch_size]
+        idx += len(batch)
+        results = await asyncio.gather(*[probe(c) for c in batch])
+
+        for cand, alive, final_url in results:
             checked += 1
-            n = checked
-            if alive:
-                cand["final_url"] = final_url
-                if len(alive_candidates) < max_sites:
-                    alive_candidates.append(cand)
-            else:
-                _log(
-                    pipeline,
-                    f"{domain} — не отвечает или парковка",
-                    domain,
-                    "error",
-                )
-            pipeline["filter_progress"] = {
-                "checked": n,
-                "total": len(to_check),
-                "alive": len(alive_candidates),
-            }
-            if n == 1 or n % 8 == 0 or n == len(to_check):
-                await _persist(run_id, pipeline)
+            if alive and len(alive_candidates) < max_sites:
+                if final_url:
+                    cand["final_url"] = final_url
+                alive_candidates.append(cand)
+            elif not alive:
+                dead_count += 1
 
-    await asyncio.gather(*[one(c) for c in to_check])
-    return alive_candidates
+        pipeline["filter_progress"] = {
+            "checked": checked,
+            "total": len(to_check),
+            "alive": len(alive_candidates),
+            "dead": dead_count,
+            "elapsed_sec": int(time.monotonic() - started),
+        }
+        _set_step(
+            pipeline,
+            "filter",
+            "running",
+            f"Проверено {checked}/{len(to_check)} · живых {len(alive_candidates)} · "
+            f"не ответили {dead_count}",
+        )
+        if checked == len(batch) or checked % (batch_size * 2) == 0 or len(alive_candidates) >= max_sites:
+            _log(
+                pipeline,
+                f"Фильтр: {checked}/{len(to_check)} · живых {len(alive_candidates)} · "
+                f"мёртвых {dead_count}",
+                status="info",
+            )
+            await _persist(run_id, pipeline)
+
+    # Не набрали max_sites — добираем из непроверенных без HTTP (иначе час на таймаутах).
+    if len(alive_candidates) < max_sites:
+        seen = {c["domain"].lower() for c in alive_candidates}
+        filler_from = to_check[idx:] + rest
+        added = 0
+        for cand in filler_from:
+            if len(alive_candidates) >= max_sites:
+                break
+            d = cand["domain"].lower()
+            if d in seen:
+                continue
+            seen.add(d)
+            alive_candidates.append(cand)
+            added += 1
+        if added:
+            _log(
+                pipeline,
+                f"Фильтр: добавлено {added} сайтов без проверки «живой» "
+                f"(с Render многие .ru не отвечают). Итого к обходу: {len(alive_candidates)}",
+                status="info",
+            )
+            await _persist(run_id, pipeline)
+
+    return alive_candidates[:max_sites]
 
 
 async def _crawl_candidates(

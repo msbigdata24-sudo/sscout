@@ -93,6 +93,15 @@ def check_admin_history() -> None:
     assert isinstance(admin_configured(), bool)
 
 
+def check_filter_alive_budget() -> None:
+    from server import config
+
+    assert config.FILTER_ALIVE_TIMEOUT <= 15
+    assert config.FILTER_ALIVE_BUDGET_SEC >= 30
+    assert "FILTER_ALIVE_BUDGET_SEC" in (ROOT / "server" / "pipeline.py").read_text(encoding="utf-8")
+    assert "_filter_alive_candidates" in (ROOT / "server" / "pipeline.py").read_text(encoding="utf-8")
+
+
 def check_ssl_weak_cert_fallback() -> None:
     import asyncio
 
@@ -311,6 +320,7 @@ def main() -> None:
     check_humanize_fetch_error()
     check_analyze_skip_logic()
     check_admin_history()
+    check_filter_alive_budget()
     check_ssl_weak_cert_fallback()
     check_client_site_urls()
     check_region_exclude()
