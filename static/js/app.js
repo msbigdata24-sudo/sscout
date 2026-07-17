@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-17-scrapingbee-env";
+  const EXPECTED_BUILD_VERSION = "2026-07-17-zenrows";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -1214,7 +1214,8 @@
     } catch (_) {
       if (data.xmlriver_configured) parts.push("XMLRiver (ключ в Render)");
     }
-    if (data.scrapingbee_configured) parts.push("ScrapingBee ✓");
+    if (data.zenrows_configured) parts.push("ZenRows ✓");
+    else if (data.scrapingbee_configured) parts.push("ScrapingBee ✓");
     else if (data.scrapingfish_configured) parts.push("ScrapingFish ✓");
     else if (data.scraping_configured) parts.push("Scraping ✓");
     adminConfigured = Boolean(data.admin_configured);

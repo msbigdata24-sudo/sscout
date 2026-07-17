@@ -6,7 +6,7 @@ from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 
-from server.config import FETCH_RETRIES, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, SITE_TIMEOUT
+from server.config import FETCH_RETRIES, SCRAPINGBEE_API_KEY, SCRAPINGFISH_API_KEY, SITE_TIMEOUT, ZENROWS_API_KEY
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -91,6 +91,25 @@ def _candidate_urls(url: str) -> list[str]:
     return out
 
 
+async def _via_zenrows(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
+    """ZenRows Universal Scraper API — premium_proxy + proxy_country=ru.
+    Docs: https://docs.zenrows.com/universal-scraper-api/api-reference
+    """
+    if not ZENROWS_API_KEY:
+        return "", 0
+    api = (
+        "https://api.zenrows.com/v1/"
+        f"?apikey={quote(ZENROWS_API_KEY, safe='')}"
+        f"&url={quote(url, safe='')}"
+        "&premium_proxy=true"
+        "&proxy_country=ru"
+    )
+    resp = await client.get(api)
+    if resp.status_code >= 400:
+        return "", resp.status_code
+    return resp.text or "", resp.status_code
+
+
 async def _via_scrapingbee(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     if not SCRAPINGBEE_API_KEY:
         return "", 0
@@ -150,6 +169,10 @@ async def _via_proxy_apis(
 ) -> tuple[str, str, int, str] | None:
     code = 0
     for candidate in candidates:
+        html, code = await _via_zenrows(client, candidate)
+        if html:
+            return html, candidate, code, "zenrows"
+
         html, code = await _via_scrapingbee(client, candidate)
         if html:
             return html, candidate, code, "scrapingbee"
@@ -174,7 +197,7 @@ async def fetch_page(
     last_error = ""
     candidates = _candidate_urls(url)
 
-    proxy_ready = bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY)
+    proxy_ready = bool(ZENROWS_API_KEY or SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY)
 
     for attempt in range(1, FETCH_RETRIES + 1):
         try:

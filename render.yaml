@@ -25,3 +25,5 @@ services:
         sync: false
       - key: SCRAPINGBEE_API_KEY
         sync: false
+      - key: ZENROWS_API_KEY
+        sync: false
