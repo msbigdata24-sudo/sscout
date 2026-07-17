@@ -136,6 +136,8 @@ def health():
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),
         "scraping_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
+        "scrapingbee_configured": bool(SCRAPINGBEE_API_KEY),
+        "scrapingfish_configured": bool(SCRAPINGFISH_API_KEY),
         "proxy_configured": bool(SCRAPINGBEE_API_KEY or SCRAPINGFISH_API_KEY),
         "admin_configured": admin_configured(),
         "port": PORT,
