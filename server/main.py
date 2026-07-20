@@ -576,8 +576,9 @@ def export_xlsx(
 def favicon():
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-        '<rect width="32" height="32" rx="7" fill="#3d8bfd"/>'
-        '<path d="M16 7l9 16H7z" fill="#fff" opacity=".95"/>'
+        '<rect width="32" height="32" fill="#1c1915"/>'
+        '<rect x="4" y="4" width="24" height="24" fill="none" stroke="#c45c1a" stroke-width="2"/>'
+        '<text x="16" y="21" text-anchor="middle" font-family="Georgia,serif" font-size="14" font-weight="700" fill="#f0ebe1">S</text>'
         "</svg>"
     )
     return Response(content=svg, media_type="image/svg+xml")
