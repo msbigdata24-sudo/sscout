@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-20-field-journal";
+  const EXPECTED_BUILD_VERSION = "2026-07-20-clear-brief";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -639,9 +639,11 @@
   }
 
   function ensureBriefQueries(data) {
-    const queries = normalizeQueriesField(data?.queries);
-    if (queries) return { ...data, queries };
-    return { ...data, queries: PILOT.queries };
+    // Пустая строка — осознанная очистка; PILOT только если поле вообще не задано.
+    if (data?.queries === undefined || data?.queries === null) {
+      return { ...data, queries: PILOT.queries };
+    }
+    return { ...data, queries: normalizeQueriesField(data.queries) };
   }
 
   function readForm() {
@@ -680,7 +682,7 @@
       r.checked = r.value === (data.regionMode || "include");
     });
     fillRegionPresets(data.regions || "");
-    $("#queries").value = normalizeQueriesField(data.queries) || PILOT.queries;
+    $("#queries").value = normalizeQueriesField(data.queries);
     $("#exclude-domains").value = data.excludeDomains || "";
     $("#phone-filter").value = data.phoneFilter || "business";
     $("#max-sites").value = data.maxSites ?? 50;
