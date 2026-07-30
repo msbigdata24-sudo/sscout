@@ -679,6 +679,40 @@
       min-width: 200px;
     }
 
+    .export-gates {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #f7f3eb;
+    }
+
+    .gate-check {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 14px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+
+    .gate-check input {
+      margin-top: 3px;
+      accent-color: var(--accent);
+    }
+
+    .def-cell {
+      text-align: center;
+      width: 52px;
+    }
+
+    .def-cell input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
     .table-wrap {
       overflow-x: auto;
       border: 1px solid var(--border);
@@ -1330,6 +1364,18 @@
         <div class="stats" id="stats" hidden></div>
 
         <div class="card">
+          <div class="export-gates" id="export-gates" hidden>
+            <label class="gate-check">
+              <input type="checkbox" id="sources-reviewed">
+              <span><strong>Источники просмотрены</strong> — ворота перед экспортом и определениями. Без галочки скачать нельзя.</span>
+            </label>
+            <p class="hint" id="definition-count-hint">К определению отмечено: 0</p>
+            <div class="actions" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-mark-visible" disabled>Отметить видимые</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-marks" disabled>Снять все отметки</button>
+            </div>
+          </div>
+
           <div class="toolbar">
             <input type="search" id="table-search" placeholder="Поиск по сайту, названию, телефону…" disabled>
             <select id="status-filter" disabled>
@@ -1347,9 +1393,16 @@
             <select id="region-filter" disabled>
               <option value="">Все регионы</option>
             </select>
+            <select id="def-filter" disabled>
+              <option value="">Все строки</option>
+              <option value="1">Только к определению</option>
+              <option value="0">Без отметки</option>
+            </select>
             <label class="radio-pill"><input type="checkbox" id="group-regions"> Группировка по регионам</label>
-            <button type="button" class="btn btn-ghost" id="btn-export" disabled>Скачать CSV</button>
-            <button type="button" class="btn btn-ghost" id="btn-export-xls" disabled>Скачать Excel (XLSX)</button>
+            <button type="button" class="btn btn-ghost" id="btn-export" disabled>CSV (все)</button>
+            <button type="button" class="btn btn-ghost" id="btn-export-xls" disabled>Excel (все)</button>
+            <button type="button" class="btn btn-primary" id="btn-export-def" disabled>CSV к определению</button>
+            <button type="button" class="btn btn-primary" id="btn-export-xls-def" disabled>Excel к определению</button>
           </div>
 
           <div class="pager" id="pager" hidden>
@@ -1367,6 +1420,7 @@
             <table>
               <thead>
                 <tr>
+                  <th title="К определению">Опред.</th>
                   <th data-sort="site">Сайт</th>
                   <th data-sort="name">Компания</th>
                   <th data-sort="region">Регион</th>
@@ -1427,10 +1481,11 @@
 
         <h4>Шаг 3 — Результаты</h4>
         <ul>
-          <li>Таблица: сайт конкурента, компания, регион, телефоны, источник.</li>
+          <li>Таблица: сайт конкурента, компания, регион, телефоны, источник, отметка «к определению».</li>
           <li>Фильтр по региону и поиск по таблице — сверху.</li>
-          <li>Экспорт в Excel — кнопка в разделе «Результаты».</li>
-          <li>Статус «агрегатор» / «исключён» — это не конкурент, а каталог или мусор.</li>
+          <li>Сначала поставьте галочку <strong>«Источники просмотрены»</strong>, отметьте строки к определению, затем экспортируйте.</li>
+          <li>Экспорт «к определению» — только отмеченные строки (для платных определений номеров).</li>
+          <li>Статус «агрегатор» / «исключён» — это не конкурент, а каталог или мусор; такие строки к определению не годятся.</li>
         </ul>
 
         <h4>Куда смотреть при проблемах</h4>
@@ -1455,6 +1510,7 @@
           <li>Добавлять в запросы <strong>бренд клиента</strong> — в выдаче будет сам клиент, не конкуренты.</li>
           <li>Использовать информационные запросы («что такое», «ГОСТ», «рейтинг») — попадут статьи, не заводы.</li>
           <li>Запускать десятки сборов подряд без паузы — тратится XMLRiver и нагрузка на сервер.</li>
+          <li>Гонять определения / платные проверки по всей сырой таблице без просмотра источников.</li>
           <li>Передавать выгрузку третьим лицам без согласования.</li>
           <li>Спамить найденные номера — только целевой B2B-контакт по регламенту Стратеикс.</li>
         </ul>

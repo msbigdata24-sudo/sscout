@@ -55,6 +55,17 @@ class AdminLoginModel(BaseModel):
     password: str = ""
 
 
+class ResultRowUpdate(BaseModel):
+    site: str
+    for_definition: bool | None = None
+    status: str | None = None
+
+
+class ResultsAnnotateModel(BaseModel):
+    sources_reviewed: bool | None = None
+    updates: list[ResultRowUpdate] = Field(default_factory=list)
+
+
 def _is_admin_request(x_admin_token: str = "") -> bool:
     return verify_admin_token((x_admin_token or "").strip())
 
@@ -379,14 +390,53 @@ def api_results(
     x_admin_token: str = Header(default="", alias="X-Admin-Token"),
 ):
     run = _require_run_access(run_id, operator=operator, x_admin_token=x_admin_token)
+    pipeline = run.get("pipeline") or {}
     return {
         "id": run_id,
         "status": run["status"],
         "brief": run["brief"],
         "results": run.get("results") or [],
+        "sources_reviewed": bool(pipeline.get("sources_reviewed")),
         "is_demo": run.get("is_demo", False),
         "error": run.get("error"),
         "created_at": run.get("created_at"),
+    }
+
+
+@app.post("/api/results/{run_id}/annotate")
+def api_annotate_results(
+    run_id: str,
+    body: ResultsAnnotateModel,
+    operator: str = Query(""),
+    x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+):
+    """Отметки «к определению», статусы строк и флаг «источники просмотрены»."""
+    run = _require_run_access(run_id, operator=operator, x_admin_token=x_admin_token)
+    results = list(run.get("results") or [])
+    by_site = {str(r.get("site") or "").strip().lower(): r for r in results}
+    changed = 0
+    for upd in body.updates:
+        key = (upd.site or "").strip().lower()
+        row = by_site.get(key)
+        if not row:
+            continue
+        if upd.for_definition is not None:
+            row["for_definition"] = bool(upd.for_definition)
+            changed += 1
+        if upd.status is not None:
+            row["status"] = upd.status
+            changed += 1
+    pipeline = dict(run.get("pipeline") or {})
+    if body.sources_reviewed is not None:
+        pipeline["sources_reviewed"] = bool(body.sources_reviewed)
+    db.update_run(run_id, results=results, pipeline=pipeline)
+    marked = sum(1 for r in results if r.get("for_definition"))
+    return {
+        "ok": True,
+        "changed": changed,
+        "sources_reviewed": bool(pipeline.get("sources_reviewed")),
+        "for_definition_count": marked,
+        "results_count": len(results),
     }
 
 
@@ -455,7 +505,7 @@ def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
     header = (
         ["Сайт", "Компания", "Регион"]
         + [f"Телефон {i}" for i in range(1, max_phones + 1)]
-        + ["Источник", "Статус"]
+        + ["Источник", "Статус", "К определению"]
     )
     data: list[list[str]] = []
     for r in rows:
@@ -463,7 +513,11 @@ def _export_table(rows: list[dict]) -> tuple[list[str], list[list[str]]]:
         line = [r.get("site", ""), r.get("name", ""), r.get("region", "")]
         for i in range(max_phones):
             line.append(phones[i] if i < len(phones) else "")
-        line += [r.get("source", ""), r.get("status", "")]
+        line += [
+            r.get("source", ""),
+            r.get("status", ""),
+            "да" if r.get("for_definition") else "",
+        ]
         data.append(line)
     return header, data
 
@@ -473,10 +527,26 @@ def _export_rows(
     *,
     operator: str = "",
     x_admin_token: str = "",
+    only_for_definition: bool = False,
+    require_reviewed: bool = True,
 ) -> list[dict]:
     run = _require_run_access(run_id, operator=operator, x_admin_token=x_admin_token)
-    return run.get("results") or []
-
+    pipeline = run.get("pipeline") or {}
+    if require_reviewed and not pipeline.get("sources_reviewed"):
+        raise HTTPException(
+            400,
+            "Сначала отметьте «Источники просмотрены» на вкладке Результаты "
+            "(ворота перед экспортом и определениями).",
+        )
+    rows = list(run.get("results") or [])
+    if only_for_definition:
+        rows = [r for r in rows if r.get("for_definition")]
+        if not rows:
+            raise HTTPException(
+                400,
+                "Нет строк с отметкой «к определению». Отметьте конкурентов в таблице.",
+            )
+    return rows
 
 def _safe_export_basename(run_id: str) -> str:
     run = db.get_run(run_id)
@@ -512,12 +582,18 @@ def export_csv(
     operator: str = Query(""),
     admin_token: str = Query("", alias="admin_token"),
     x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+    only_for_definition: bool = Query(False, description="Только строки «к определению»"),
 ):
     import csv
     import io
 
     token = x_admin_token or admin_token
-    rows = _export_rows(run_id, operator=operator, x_admin_token=token)
+    rows = _export_rows(
+        run_id,
+        operator=operator,
+        x_admin_token=token,
+        only_for_definition=only_for_definition,
+    )
     header, data = _export_table(rows)
     buf = io.StringIO()
     buf.write("\ufeff")
@@ -525,6 +601,9 @@ def export_csv(
     w.writerow(header)
     w.writerows(data)
     filename = _export_filename(run_id, "csv")
+    if only_for_definition:
+        stem, ext = filename.rsplit(".", 1)
+        filename = f"{stem} к-определению.{ext}"
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
@@ -538,13 +617,19 @@ def export_xlsx(
     operator: str = Query(""),
     admin_token: str = Query("", alias="admin_token"),
     x_admin_token: str = Header(default="", alias="X-Admin-Token"),
+    only_for_definition: bool = Query(False, description="Только строки «к определению»"),
 ):
     import io
 
     from openpyxl import Workbook
 
     token = x_admin_token or admin_token
-    rows = _export_rows(run_id, operator=operator, x_admin_token=token)
+    rows = _export_rows(
+        run_id,
+        operator=operator,
+        x_admin_token=token,
+        only_for_definition=only_for_definition,
+    )
     header, data = _export_table(rows)
     phone_col_start = 3
     phone_col_count = sum(1 for h in header if h.startswith("Телефон"))
@@ -565,6 +650,9 @@ def export_xlsx(
     buf = io.BytesIO()
     wb.save(buf)
     filename = _export_filename(run_id, "xlsx")
+    if only_for_definition:
+        stem, ext = filename.rsplit(".", 1)
+        filename = f"{stem} к-определению.{ext}"
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

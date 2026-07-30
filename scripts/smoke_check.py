@@ -30,12 +30,12 @@ def check_js_constants() -> None:
     assert 'id="btn-instructions"' in index_html
     assert 'id="instructions-modal"' in index_html
     assert 'id="operator-name"' in index_html
-    assert 'id="btn-download-brief"' in index_html
-    assert 'id="btn-upload-brief"' in index_html
-    assert "openHistoryRun" in app_js
-    assert "stopHistoryRun" in app_js
-    assert "data-open-run" in app_js
-    assert "data-stop-run" in app_js
+    assert 'id="sources-reviewed"' in index_html
+    assert 'id="btn-export-def"' in index_html
+    assert 'id="btn-export-xls-def"' in index_html
+    assert "for_definition" in app_js
+    assert "/api/results/" in app_js and "annotate" in app_js
+    assert "only_for_definition" in app_js
 
 
 def check_history_fields() -> None:
@@ -311,6 +311,48 @@ def check_brief_suggest_strateix() -> None:
     assert "strateix.ru" in r["excludeDomains"]
 
 
+def check_export_gates() -> None:
+    from fastapi import HTTPException
+
+    from server.db import db
+    from server.main import ResultsAnnotateModel, ResultRowUpdate, _export_rows, _export_table
+
+    run_id = "smoke-export-gates"
+    db.create_run(run_id, {"operatorName": "Smoke", "clientName": "Smoke", "clientSite": "https://example.com"})
+    db.update_run(
+        run_id,
+        status="done",
+        results=[
+            {"site": "good.ru", "name": "Good", "status": "найден", "p1": "79001234567", "for_definition": True},
+            {"site": "bad.ru", "name": "Bad", "status": "агрегатор", "p1": "79007654321", "for_definition": False},
+        ],
+        pipeline={},
+    )
+    try:
+        _export_rows(run_id, operator="Smoke", require_reviewed=True)
+        raise AssertionError("expected 400 without sources_reviewed")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert "просмотрены" in str(exc.detail).lower() or "источник" in str(exc.detail).lower()
+
+    db.update_run(run_id, pipeline={"sources_reviewed": True})
+    all_rows = _export_rows(run_id, operator="Smoke", require_reviewed=True)
+    assert len(all_rows) == 2
+    only = _export_rows(run_id, operator="Smoke", only_for_definition=True, require_reviewed=True)
+    assert len(only) == 1
+    assert only[0]["site"] == "good.ru"
+    header, data = _export_table(only)
+    assert "К определению" in header
+    assert data[0][-1] == "да"
+
+    # annotate API path via model
+    body = ResultsAnnotateModel(
+        sources_reviewed=True,
+        updates=[ResultRowUpdate(site="bad.ru", for_definition=True)],
+    )
+    assert body.sources_reviewed is True
+
+
 def main() -> None:
     check_js_constants()
     check_federal_districts()
@@ -325,6 +367,7 @@ def main() -> None:
     check_serp_filters()
     check_export_phones()
     check_export_filename()
+    check_export_gates()
     check_brief_suggest_frameclub()
     check_brief_suggest_opalubka()
     check_brief_suggest_strateix()

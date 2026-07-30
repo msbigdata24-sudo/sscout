@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-20-clear-brief";
+  const EXPECTED_BUILD_VERSION = "2026-07-30-export-gates";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -1013,18 +1013,17 @@
     const statusF = $("#status-filter").value;
     const typeF = $("#type-filter")?.value || "";
     const regionF = $("#region-filter")?.value || "";
-    const dateF = $("#date-filter")?.value || "";
+    const defF = $("#def-filter")?.value || "";
 
     return rows.filter((r) => {
       if (statusF && r.status !== statusF) return false;
       if (typeF && r.p1_type !== typeF && r.p2_type !== typeF) return false;
       if (regionF && (r.region || "") !== regionF) return false;
+      if (defF === "1" && !r.for_definition) return false;
+      if (defF === "0" && r.for_definition) return false;
       if (search) {
         const hay = [r.site, r.name, r.offer, r.p1, r.p2, r.source, r.region].join(" ").toLowerCase();
         if (!hay.includes(search)) return false;
-      }
-      if (dateF && currentRunId) {
-        /* фильтр по дате сессии — на уровне истории */
       }
       return true;
     });
@@ -1058,6 +1057,7 @@
     const empty = $("#results-empty");
     const wrap = $("#table-wrap");
     const body = $("#results-body");
+    const gates = $("#export-gates");
 
     if (!rows.length) {
       empty.hidden = false;
@@ -1066,13 +1066,16 @@
       $("#live-banner").hidden = true;
       $("#pagination").hidden = true;
       $("#pager").hidden = true;
+      if (gates) gates.hidden = true;
       return;
     }
 
     empty.hidden = true;
     wrap.hidden = false;
+    if (gates) gates.hidden = false;
     $("#live-banner").hidden = !isLiveRun;
     renderStats(rows);
+    updateDefinitionHint();
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     if (tablePage > totalPages) tablePage = totalPages;
@@ -1080,21 +1083,23 @@
 
     const rowHtml = (r) => {
       const url = r.site.startsWith("http") ? r.site : `https://${r.site}`;
-      return `<tr data-site="${r.site}">
-        <td><a class="site-link" href="${url}" target="_blank" rel="noopener">${r.site}</a></td>
-        <td>${r.name}</td>
-        <td>${r.region || "—"}</td>
-        <td>${r.offer}</td>
+      const checked = r.for_definition ? "checked" : "";
+      return `<tr data-site="${escapeHtml(r.site)}">
+        <td class="def-cell"><input type="checkbox" class="def-check" data-site="${escapeHtml(r.site)}" ${checked} title="К определению"></td>
+        <td><a class="site-link" href="${url}" target="_blank" rel="noopener">${escapeHtml(r.site)}</a></td>
+        <td>${escapeHtml(r.name || "")}</td>
+        <td>${escapeHtml(r.region || "—")}</td>
+        <td>${escapeHtml(r.offer || "")}</td>
         <td class="contacts-cell">${renderContactsCell(r)}</td>
-        <td>${r.source}</td>
-        <td class="status-cell" data-site="${r.site}">${statusTag(r.status)}</td>
+        <td>${escapeHtml(r.source || "")}</td>
+        <td class="status-cell" data-site="${escapeHtml(r.site)}">${statusTag(r.status)}</td>
       </tr>`;
     };
 
     if (groupMode) {
       const groups = groupByRegion(pageRows);
       body.innerHTML = Object.entries(groups).map(([reg, items]) => `
-        <tr class="group-row"><td colspan="7"><details open><summary>${reg} (${items.length})</summary>
+        <tr class="group-row"><td colspan="8"><details open><summary>${escapeHtml(reg)} (${items.length})</summary>
         <table class="inner-table">${items.map(rowHtml).join("")}</table></details></td></tr>`).join("");
     } else {
       body.innerHTML = pageRows.map(rowHtml).join("");
@@ -1116,28 +1121,111 @@
     body.querySelectorAll(".status-cell").forEach((cell) => {
       cell.addEventListener("click", () => cycleStatus(cell.dataset.site));
     });
+    body.querySelectorAll(".def-check").forEach((box) => {
+      box.addEventListener("change", () => toggleDefinition(box.dataset.site, box.checked));
+    });
   }
 
   const STATUS_CYCLE = ["найден", "без телефона", "исключён", "агрегатор"];
+  let sourcesReviewed = false;
+  let annotateTimer = null;
+
+  function definitionCount() {
+    return results.filter((r) => r.for_definition).length;
+  }
+
+  function updateDefinitionHint() {
+    const hint = $("#definition-count-hint");
+    if (hint) hint.textContent = `К определению отмечено: ${definitionCount()}`;
+    const reviewed = $("#sources-reviewed");
+    if (reviewed) reviewed.checked = Boolean(sourcesReviewed);
+  }
+
+  function annotatePayload(extra = {}) {
+    const body = { ...extra, updates: extra.updates || [] };
+    const params = new URLSearchParams();
+    const op = currentOperatorName();
+    if (op) params.set("operator", op);
+    const headers = { "Content-Type": "application/json", ...apiHeaders() };
+    return fetch(`${API_BASE}/api/results/${currentRunId}/annotate?${params}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  function persistAnnotations(extra = {}) {
+    window.SSStorage.saveResults(results);
+    updateDefinitionHint();
+    if (!currentRunId || !apiOnline) return;
+    clearTimeout(annotateTimer);
+    annotateTimer = setTimeout(async () => {
+      try {
+        const updates = results.map((r) => ({
+          site: r.site,
+          for_definition: Boolean(r.for_definition),
+          status: r.status || "",
+        }));
+        const res = await annotatePayload({
+          sources_reviewed: sourcesReviewed,
+          updates,
+          ...extra,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast(err.detail || "Не удалось сохранить отметки на сервере");
+        }
+      } catch (_) {
+        toast("Сеть: отметки сохранены только в браузере");
+      }
+    }, 400);
+  }
+
+  function toggleDefinition(site, checked) {
+    const row = results.find((r) => r.site === site);
+    if (!row) return;
+    row.for_definition = Boolean(checked);
+    persistAnnotations();
+    renderStats(results);
+  }
 
   function cycleStatus(site) {
     const row = results.find((r) => r.site === site);
     if (!row) return;
     const i = STATUS_CYCLE.indexOf(row.status);
     row.status = STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
-    window.SSStorage.saveResults(results);
+    persistAnnotations();
     renderTable(results);
+  }
+
+  function markVisibleForDefinition(value) {
+    const visible = filterRows(results);
+    visible.forEach((r) => {
+      if (r.status === "исключён" || r.status === "агрегатор") return;
+      r.for_definition = Boolean(value);
+    });
+    persistAnnotations();
+    renderTable(results);
+    toast(value ? `Отмечено видимых (без исключённых): ${visible.filter((r) => r.for_definition).length}` : "Отметки сняты с видимых");
+  }
+
+  function clearAllDefinitionMarks() {
+    results.forEach((r) => { r.for_definition = false; });
+    persistAnnotations();
+    renderTable(results);
+    toast("Все отметки «к определению» сняты");
   }
 
   function renderStats(rows) {
     const total = rows.length;
     const withPhone = rows.filter((r) => r.p1 || r.p2).length;
     const excluded = rows.filter((r) => r.status === "исключён" || r.status === "агрегатор").length;
+    const forDef = rows.filter((r) => r.for_definition).length;
     $("#stats").hidden = false;
     $("#stats").innerHTML = `
       <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Всего</div></div>
       <div class="stat"><div class="stat-value">${withPhone}</div><div class="stat-label">С телефоном</div></div>
-      <div class="stat"><div class="stat-value">${total - withPhone - excluded}</div><div class="stat-label">Без номера</div></div>
+      <div class="stat"><div class="stat-value">${forDef}</div><div class="stat-label">К определению</div></div>
       <div class="stat"><div class="stat-value">${excluded}</div><div class="stat-label">Исключено</div></div>`;
   }
 
@@ -1328,10 +1416,9 @@
       setProgressUI(100, "", "done");
       const rr = await fetchRunResults(runId);
       const payload = await rr.json();
-      results = payload.results || [];
+      applyResultsPayload(payload);
       isLiveRun = true;
       currentRunId = runId;
-      window.SSStorage.saveResults(results);
       enableResultsUI();
       $("#results-subtitle").textContent = `${brief.clientName} · живой сбор · ${results.length} строк`;
       const phones = results.filter((r) => r.p1).length;
@@ -1367,8 +1454,7 @@
           const rr = await fetchRunResults(runId);
           const payload = await rr.json();
           if ((payload.results || []).length) {
-            results = payload.results;
-            window.SSStorage.saveResults(results);
+            applyResultsPayload(payload);
           }
         } catch (_) {}
         toast(`Остановлено · обойдено ${data.results_count || 0} сайтов · «Продолжить сбор» продолжит`);
@@ -1432,13 +1518,30 @@
     }
   }
 
+  function applyResultsPayload(payload) {
+    results = (payload.results || []).map((r) => ({
+      ...r,
+      for_definition: Boolean(r.for_definition),
+    }));
+    if (typeof payload.sources_reviewed === "boolean") {
+      sourcesReviewed = payload.sources_reviewed;
+    }
+    window.SSStorage.saveResults(results);
+    updateDefinitionHint();
+  }
+
   function enableResultsUI() {
     $("#table-search").disabled = false;
     $("#status-filter").disabled = false;
-    $("#type-filter").disabled = false;
-    $("#region-filter").disabled = false;
+    if ($("#type-filter")) $("#type-filter").disabled = false;
+    if ($("#region-filter")) $("#region-filter").disabled = false;
+    if ($("#def-filter")) $("#def-filter").disabled = false;
+    if ($("#btn-mark-visible")) $("#btn-mark-visible").disabled = false;
+    if ($("#btn-clear-marks")) $("#btn-clear-marks").disabled = false;
     $("#btn-export").disabled = false;
     $("#btn-export-xls").disabled = false;
+    if ($("#btn-export-def")) $("#btn-export-def").disabled = false;
+    if ($("#btn-export-xls-def")) $("#btn-export-xls-def").disabled = false;
     renderTable(results);
   }
 
@@ -1538,6 +1641,8 @@
 
     startingRun = true;
     saveResumeRunId("");
+    sourcesReviewed = false;
+    updateDefinitionHint();
     setRunButtons(true);
     startRunTimer();
     setProgressUI(1, "Проверка сервера…", "running");
@@ -1790,7 +1895,7 @@
       results = payload.results || [];
       currentRunId = id;
       isLiveRun = !payload.is_demo;
-      window.SSStorage.saveResults(results);
+      applyResultsPayload(payload);
 
       if (info.status === "running" || info.status === "pending") {
         saveResumeRunId(id);
@@ -1963,24 +2068,69 @@
     }
   }
 
-  function exportUrl(ext) {
+  function exportUrl(ext, onlyForDefinition) {
     const params = new URLSearchParams();
     const op = currentOperatorName();
     if (op) params.set("operator", op);
     const token = getAdminToken();
     if (token) params.set("admin_token", token);
+    if (onlyForDefinition) params.set("only_for_definition", "true");
     const qs = params.toString();
     return `${API_BASE}/api/export/${currentRunId}.${ext}${qs ? `?${qs}` : ""}`;
   }
 
+  async function runExport(ext, onlyForDefinition) {
+    if (!currentRunId || !apiOnline) {
+      toast("Нет активного прогона");
+      return;
+    }
+    if (!sourcesReviewed) {
+      toast("Сначала поставьте галочку «Источники просмотрены»");
+      const gates = $("#export-gates");
+      if (gates) gates.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (onlyForDefinition && definitionCount() === 0) {
+      toast("Отметьте хотя бы одну строку «к определению»");
+      return;
+    }
+    // На всякий случай дожать сохранение на сервер перед скачиванием
+    try {
+      const updates = results.map((r) => ({
+        site: r.site,
+        for_definition: Boolean(r.for_definition),
+        status: r.status || "",
+      }));
+      const res = await annotatePayload({
+        sources_reviewed: true,
+        updates,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast(typeof err.detail === "string" ? err.detail : "Не удалось сохранить отметки");
+        return;
+      }
+    } catch (_) {
+      toast("Нет связи с сервером — экспорт недоступен");
+      return;
+    }
+    window.open(exportUrl(ext, onlyForDefinition), "_blank");
+  }
+
   function exportCsv() {
-    if (currentRunId && apiOnline) window.open(exportUrl("csv"), "_blank");
-    else toast("Нет активного прогона");
+    runExport("csv", false);
   }
 
   function exportXls() {
-    if (currentRunId && apiOnline) window.open(exportUrl("xlsx"), "_blank");
-    else toast("Нет активного прогона");
+    runExport("xlsx", false);
+  }
+
+  function exportCsvDef() {
+    runExport("csv", true);
+  }
+
+  function exportXlsDef() {
+    runExport("xlsx", true);
   }
 
   function showPage(id) {
@@ -2170,6 +2320,17 @@
     $("#group-regions")?.addEventListener("change", () => renderTable(results));
     $("#btn-export").addEventListener("click", exportCsv);
     $("#btn-export-xls").addEventListener("click", exportXls);
+    $("#btn-export-def")?.addEventListener("click", exportCsvDef);
+    $("#btn-export-xls-def")?.addEventListener("click", exportXlsDef);
+    $("#btn-mark-visible")?.addEventListener("click", () => markVisibleForDefinition(true));
+    $("#btn-clear-marks")?.addEventListener("click", clearAllDefinitionMarks);
+    $("#sources-reviewed")?.addEventListener("change", (e) => {
+      sourcesReviewed = Boolean(e.target.checked);
+      persistAnnotations({ sources_reviewed: sourcesReviewed });
+      if (sourcesReviewed) toast("Ворота открыты: можно экспортировать");
+      else toast("Экспорт заблокирован, пока источники не просмотрены");
+    });
+    $("#def-filter")?.addEventListener("change", () => renderTable(results));
     $("#btn-admin-login")?.addEventListener("click", loginAsAdmin);
     $("#btn-admin-logout")?.addEventListener("click", logoutAdmin);
     $("#admin-password")?.addEventListener("keydown", (e) => {
