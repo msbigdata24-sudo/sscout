@@ -1,6 +1,8 @@
 window.SSStorage = {
   BRIEF_KEY: "signal-scout-brief-v2",
   RESULTS_KEY: "signal-scout-results-v2",
+  RESUME_KEY: "signal-scout-resume-run-v1",
+  LAST_RUN_KEY: "signal-scout-last-run-v1",
 
   loadBrief(defaults) {
     try {
@@ -30,8 +32,6 @@ window.SSStorage = {
     localStorage.setItem(this.RESULTS_KEY, JSON.stringify(data));
   },
 
-  RESUME_KEY: "signal-scout-resume-run-v1",
-
   saveResumeRunId(id) {
     if (id) localStorage.setItem(this.RESUME_KEY, id);
     else localStorage.removeItem(this.RESUME_KEY);
@@ -40,6 +40,20 @@ window.SSStorage = {
   loadResumeRunId() {
     try {
       return localStorage.getItem(this.RESUME_KEY) || "";
+    } catch (_) {
+      return "";
+    }
+  },
+
+  /** Последний завершённый/открытый прогон — для экспорта после F5 и смены деплоя. */
+  saveLastRunId(id) {
+    if (id) localStorage.setItem(this.LAST_RUN_KEY, id);
+    else localStorage.removeItem(this.LAST_RUN_KEY);
+  },
+
+  loadLastRunId() {
+    try {
+      return localStorage.getItem(this.LAST_RUN_KEY) || "";
     } catch (_) {
       return "";
     }

@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-08-13-phones-900-crawl";
+  const EXPECTED_BUILD_VERSION = "2026-08-13-export-run-id";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;
@@ -497,11 +497,60 @@
     if (!version) return;
     const prev = localStorage.getItem(DEPLOY_VERSION_KEY);
     if (prev && prev !== version) {
+      // Сброс только «продолжить сбор» — ID для экспорта и таблицу не трогаем.
       saveResumeRunId("");
       sessionStorage.removeItem(window.SSStorage.RESUME_KEY);
-      currentRunId = null;
     }
     localStorage.setItem(DEPLOY_VERSION_KEY, version);
+  }
+
+  function saveLastRunId(id) {
+    window.SSStorage.saveLastRunId(id || "");
+  }
+
+  async function runExistsOnServer(id) {
+    if (!id || !apiOnline) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/run/${id}`);
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Восстановить ID прогона для экспорта/отметок, если currentRunId потерялся. */
+  async function resolveExportRunId() {
+    const candidates = [
+      currentRunId,
+      window.SSStorage.loadLastRunId(),
+      window.SSStorage.loadResumeRunId(),
+      sessionStorage.getItem(window.SSStorage.RESUME_KEY),
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    for (const id of candidates) {
+      if (await runExistsOnServer(id)) {
+        currentRunId = id;
+        saveLastRunId(id);
+        return id;
+      }
+    }
+
+    if (!apiOnline) return null;
+    const siteKey = clientSiteHostKey($("#client-site")?.value || brief?.clientSite || "");
+    try {
+      const res = await fetchHistory(20);
+      const data = await res.json();
+      for (const it of data.items || []) {
+        if (siteKey && it.client_site && clientSiteHostKey(it.client_site) !== siteKey) continue;
+        if (!["done", "stopped", "error", "running"].includes(it.status)) continue;
+        if (await runExistsOnServer(it.id)) {
+          currentRunId = it.id;
+          saveLastRunId(it.id);
+          return it.id;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   function saveResumeRunId(id) {
@@ -1157,10 +1206,14 @@
   function persistAnnotations(extra = {}) {
     window.SSStorage.saveResults(results);
     updateDefinitionHint();
-    if (!currentRunId || !apiOnline) return;
+    if (!apiOnline) return;
     clearTimeout(annotateTimer);
     annotateTimer = setTimeout(async () => {
       try {
+        if (!currentRunId) {
+          const id = await resolveExportRunId();
+          if (!id) return;
+        }
         const updates = results.map((r) => ({
           site: r.site,
           for_definition: Boolean(r.for_definition),
@@ -1413,6 +1466,7 @@
       clearInterval(pollTimer);
       stopRunTimer();
       saveResumeRunId("");
+      saveLastRunId(runId);
       setProgressUI(100, "", "done");
       const rr = await fetchRunResults(runId);
       const payload = await rr.json();
@@ -1894,6 +1948,7 @@
 
       results = payload.results || [];
       currentRunId = id;
+      saveLastRunId(id);
       isLiveRun = !payload.is_demo;
       applyResultsPayload(payload);
 
@@ -2080,8 +2135,13 @@
   }
 
   async function runExport(ext, onlyForDefinition) {
-    if (!currentRunId || !apiOnline) {
-      toast("Нет активного прогона");
+    if (!apiOnline) {
+      toast("Сервер офлайн — подождите или обновите страницу");
+      return;
+    }
+    const runId = await resolveExportRunId();
+    if (!runId) {
+      toast("Нет прогона на сервере. Откройте его во вкладке «История запросов» и снова нажмите Excel");
       return;
     }
     if (!sourcesReviewed) {
@@ -2348,9 +2408,19 @@
       });
     });
 
-    checkApiWithRetry().then(() => {
+    checkApiWithRetry().then(async () => {
       scheduleHealthRetry();
       purgeStaleRuns();
+      // После F5 / смены деплоя вернуть ID прогона для экспорта.
+      if (results.length && !currentRunId) {
+        const id = await resolveExportRunId();
+        if (id) currentRunId = id;
+      } else if (currentRunId) {
+        saveLastRunId(currentRunId);
+      } else {
+        const last = window.SSStorage.loadLastRunId();
+        if (last && await runExistsOnServer(last)) currentRunId = last;
+      }
       refreshStartButtonLabel();
     });
     $("#api-status")?.addEventListener("click", () => {

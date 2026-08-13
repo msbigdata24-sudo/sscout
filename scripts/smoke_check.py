@@ -35,7 +35,9 @@ def check_js_constants() -> None:
     assert 'id="btn-export-xls-def"' in index_html
     assert "for_definition" in app_js
     assert "/api/results/" in app_js and "annotate" in app_js
-    assert "only_for_definition" in app_js
+    assert "saveLastRunId" in app_js
+    assert "resolveExportRunId" in app_js
+    assert "LAST_RUN_KEY" in (ROOT / "static" / "js" / "storage.js").read_text(encoding="utf-8")
 
 
 def check_history_fields() -> None:
