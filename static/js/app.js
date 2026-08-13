@@ -57,7 +57,7 @@
     { id: "filter", title: "Фильтры", desc: "Регион, живой сайт, исключения, лимит сайтов." },
     { id: "crawl", title: "Обход сайтов конкурентов", desc: "Главная, контакты, footer, JSON-LD." },
     { id: "catalog", title: "Каталоги и площадки", desc: "KudaGid, 2GIS — если на сайте пусто." },
-    { id: "dedup", title: "Нормализация и удаление дубликатов", desc: "79001234567 · мобильные и городские." },
+    { id: "dedup", title: "Нормализация и удаление дубликатов", desc: "79001234567 · мобильные (вкл. 900) и городские." },
   ];
 
   let brief = null;
@@ -75,7 +75,7 @@
   let startingRun = false;
   const PAGE_SIZE = 50;
   const DEPLOY_VERSION_KEY = "signal-scout-deploy-version";
-  const EXPECTED_BUILD_VERSION = "2026-07-30-export-gates";
+  const EXPECTED_BUILD_VERSION = "2026-08-13-phones-900-crawl";
   const ADMIN_TOKEN_KEY = "signal-scout-admin-token-v1";
   let adminConfigured = false;
   let isAdminSession = false;

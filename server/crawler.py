@@ -68,6 +68,10 @@ def normalize_url(url: str, base: str | None = None) -> str:
 
 
 async def check_robots_allowed(url: str, *, user_agent: str = "SignalScoutBot/1.0") -> tuple[bool, str]:
+    """Проверка robots.txt. Жёстко не блокируем: иначе теряем телефоны на половине сайтов.
+
+    Возвращает (ok_to_crawl, warning). warning пустой, если запрета нет.
+    """
     root = normalize_url(url)
     if not root:
         return True, ""
@@ -81,7 +85,8 @@ async def check_robots_allowed(url: str, *, user_agent: str = "SignalScoutBot/1.
         rp.parse(html.splitlines())
         path = parsed.path or "/"
         if not rp.can_fetch(user_agent, path):
-            return False, "robots.txt запрещает обход"
+            # Раньше здесь был полный отказ → статус «без телефона» при номерах в шапке.
+            return True, "robots.txt formal disallow — обход всё равно продолжаем"
         return True, ""
     except Exception:
         return True, ""
@@ -122,6 +127,38 @@ def _discover_links(html: str, base_url: str, root_host: str, depth: int) -> lis
     return [u for _, u in scored[:8]]
 
 
+def _result_payload(
+    *,
+    ok: bool,
+    site: str,
+    phones_meta: list[dict],
+    title: str = "",
+    text: str = "",
+    pages: int = 0,
+    error: str = "",
+) -> dict:
+    seen: set[str] = set()
+    unique_meta: list[dict] = []
+    for item in phones_meta:
+        p = item.get("phone")
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        unique_meta.append(item)
+    out = {
+        "ok": ok,
+        "site": site,
+        "phones": [p["phone"] for p in unique_meta],
+        "phones_meta": unique_meta,
+        "title": title,
+        "text": text,
+        "pages": pages,
+    }
+    if error:
+        out["error"] = error
+    return out
+
+
 async def parse_site(
     site: str,
     *,
@@ -131,10 +168,14 @@ async def parse_site(
     on_log: LogFn | None = None,
     paths: tuple[str, ...] | None = None,
 ) -> dict:
-    """Парсинг сайта: главная, контакты, footer, глубина 1–5."""
+    """Парсинг сайта: сначала главная (там обычно телефон), затем контакты.
+
+    Как только есть хотя бы один номер — сразу возвращаем результат.
+    Раньше при таймауте всего обхода терялись уже найденные телефоны.
+    """
     root = normalize_url(f"https://{site}" if "://" not in site else site)
     if not root:
-        return {"ok": False, "site": site, "error": "bad url", "phones": [], "phones_meta": []}
+        return _result_payload(ok=False, site=site, phones_meta=[], error="bad url")
 
     root_host = urlparse(root).netloc.lower()
     parsed_root = urlparse(root)
@@ -143,7 +184,12 @@ async def parse_site(
     def _is_home_page(url: str) -> bool:
         return (urlparse(url).path or "/").rstrip("/") in ("", "/")
 
-    path_list = paths if paths is not None else PRIORITY_PATHS
+    # Главная первой — не тратим лимит на /contacts, пока не посмотрели шапку.
+    if paths is not None:
+        path_list = paths
+    else:
+        path_list = ("",) + tuple(p for p in PRIORITY_PATHS if p)
+
     urls_to_fetch: list[str] = []
     for path in path_list:
         u = normalize_url(path or "/", base_origin) if path else base_origin + "/"
@@ -162,20 +208,16 @@ async def parse_site(
             if hasattr(result, "__await__"):
                 await result
 
-    allowed, robots_reason = await check_robots_allowed(root)
-    if not allowed:
-        await log(f"{site} — {robots_reason}", "skip")
-        return {
-            "ok": False,
-            "site": site,
-            "error": robots_reason,
-            "phones": [],
-            "phones_meta": [],
-        }
+    _allowed, robots_warn = await check_robots_allowed(root)
+    if robots_warn:
+        await log(f"{site} — {robots_warn}", "info")
 
     visited: set[str] = set()
-    queue: list[tuple[str, int]] = [(u, 0) for u in urls_to_fetch]
+    # Сначала только главная; контакты добавим, если на главной телефонов нет.
+    home = urls_to_fetch[0]
+    queue: list[tuple[str, int]] = [(home, 0)]
     max_pages = max(4, depth * 3)
+    contacts_queued = False
 
     def _unique_phones() -> list[dict]:
         seen: set[str] = set()
@@ -188,6 +230,17 @@ async def parse_site(
             out.append(item)
         return out
 
+    def _snapshot(ok: bool, error: str = "") -> dict:
+        return _result_payload(
+            ok=ok,
+            site=domain_from_crawl(root, site),
+            phones_meta=all_phones_meta,
+            title=title,
+            text="\n".join(all_text)[:6000],
+            pages=pages_ok,
+            error=error,
+        )
+
     while queue and len(visited) < max_pages:
         url, d = queue.pop(0)
         if url in visited:
@@ -198,6 +251,12 @@ async def parse_site(
         html, final_url, code, method = await fetch_page(
             url, use_proxy=use_proxy, delay_ms=delay_ms
         )
+        if not html and _is_home_page(url) and not use_proxy:
+            # Повтор главной через proxy-API, если настроены ключи.
+            await log(f"{site} — повтор главной через proxy…", "pending")
+            html, final_url, code, method = await fetch_page(
+                url, use_proxy=True, delay_ms=0
+            )
         if not html:
             last_error = humanize_fetch_error(method)
             page_path = urlparse(url).path or "/"
@@ -217,48 +276,32 @@ async def parse_site(
 
         await log(f"{site} · найдено {len(phones)} номеров ({method})", "success")
 
+        # Главное: номер уже есть — сразу отдаём, не жжём таймаут на /contacts.
         if _unique_phones():
-            # Телефон уже есть (часто в шапке) — не обходим весь сайт, только контакты.
-            max_pages = min(max_pages, len(visited) + 2)
-            if d < 1:
-                for path in _CONTACT_PATHS:
-                    contact_url = normalize_url(path, base_origin)
-                    if contact_url and contact_url not in visited:
-                        queue.append((contact_url, 1))
+            await log(
+                f"{site} — телефон найден, обход останавливаем (чтобы не потерять на таймауте)",
+                "success",
+            )
+            return _snapshot(ok=True)
+
+        if _is_home_page(url) and not contacts_queued:
+            contacts_queued = True
+            for path in list(_CONTACT_PATHS) + [p for p in path_list if p]:
+                contact_url = normalize_url(path, base_origin)
+                if contact_url and contact_url not in visited:
+                    queue.append((contact_url, 1))
         elif d < depth - 1:
             for link in _discover_links(html, final_url, root_host, depth):
                 if link not in visited:
                     queue.append((link, d + 1))
 
-    seen_p: set[str] = set()
-    unique_meta: list[dict] = []
-    for item in all_phones_meta:
-        p = item["phone"]
-        if p in seen_p:
-            continue
-        seen_p.add(p)
-        unique_meta.append(item)
-
     if not pages_ok:
-        return {
-            "ok": False,
-            "site": domain_from_crawl(root, site),
-            "error": humanize_fetch_error(last_error or "unreachable"),
-            "phones": [],
-            "phones_meta": [],
-            "title": "",
-            "text": "",
-        }
+        return _snapshot(
+            ok=False,
+            error=humanize_fetch_error(last_error or "unreachable"),
+        )
 
-    return {
-        "ok": True,
-        "site": domain_from_crawl(root, site),
-        "phones": [p["phone"] for p in unique_meta],
-        "phones_meta": unique_meta,
-        "title": title,
-        "text": "\n".join(all_text)[:6000],
-        "pages": pages_ok,
-    }
+    return _snapshot(ok=True)
 
 
 def domain_from_crawl(final_url: str, fallback: str) -> str:

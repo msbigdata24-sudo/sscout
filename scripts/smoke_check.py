@@ -216,6 +216,30 @@ def check_export_phones() -> None:
     assert len(_phones_for_export(row)) == 6
 
 
+def check_phone_code_900_allowed() -> None:
+    """Код 900 (7900…) — нужен для обзвона; 8-800 по-прежнему отсекаем."""
+    from server.phones import extract_phones, pick_phones_list, validate_phone
+
+    assert validate_phone("79001234567")["valid"] is True
+    assert validate_phone("79001234567")["type"] == "mobile"
+    assert validate_phone("78001234567")["valid"] is False
+
+    html = '<header><a href="tel:+79001234567">+7 (900) 123-45-67</a></header>'
+    found = extract_phones(html, "https://example.ru/")
+    assert any(p["phone"] == "79001234567" for p in found)
+    assert "79001234567" in pick_phones_list(found, "business")
+    assert "79001234567" in pick_phones_list(found, "mobile")
+
+
+def check_robots_soft_allow() -> None:
+    import asyncio
+    from server.crawler import check_robots_allowed
+
+    allowed, warn = asyncio.run(check_robots_allowed("https://example.com/"))
+    assert allowed is True
+    # warn может быть пустым, если robots пустой/недоступен — главное не False.
+
+
 def check_export_filename() -> None:
     from server.main import _export_filename, _safe_export_basename
 
@@ -312,12 +336,13 @@ def check_brief_suggest_strateix() -> None:
 
 
 def check_export_gates() -> None:
+    import time
     from fastapi import HTTPException
 
     from server.db import db
     from server.main import ResultsAnnotateModel, ResultRowUpdate, _export_rows, _export_table
 
-    run_id = "smoke-export-gates"
+    run_id = f"smoke-export-gates-{int(time.time())}"
     db.create_run(run_id, {"operatorName": "Smoke", "clientName": "Smoke", "clientSite": "https://example.com"})
     db.update_run(
         run_id,
@@ -366,6 +391,8 @@ def main() -> None:
     check_region_exclude()
     check_serp_filters()
     check_export_phones()
+    check_phone_code_900_allowed()
+    check_robots_soft_allow()
     check_export_filename()
     check_export_gates()
     check_brief_suggest_frameclub()

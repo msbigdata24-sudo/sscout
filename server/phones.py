@@ -42,10 +42,12 @@ def normalize_digits(raw: str) -> str:
 def phone_type(digits: str) -> str:
     if not digits or len(digits) != 11:
         return "invalid"
+    # 8-800 — бесплатная линия, для обзвона не берём.
+    if digits.startswith("7800"):
+        return "excluded"
+    # 79… включая код 900 (7900…) — рабочие мобильные / виртуальные, нужны.
     if digits.startswith("79"):
         return "mobile"
-    if digits.startswith("7800") or digits.startswith("7900"):
-        return "excluded"
     for code in _CITY_CODES:
         if digits.startswith("7" + code):
             return "city"
@@ -64,9 +66,8 @@ def validate_phone(digits: str) -> dict:
         return {"valid": False, "type": "invalid", "reason": "пусто"}
     if digits.startswith("7800"):
         return {"valid": False, "type": "excluded", "reason": "8-800"}
-    if digits.startswith("7900"):
-        return {"valid": False, "type": "excluded", "reason": "код 900"}
     t = phone_type(digits)
+    # Код 900 (7900…) — валидный мобильный, не отсекаем.
     if t == "mobile" and re.fullmatch(r"79\d{9}", digits):
         return {"valid": True, "type": "mobile", "reason": ""}
     if t == "city":

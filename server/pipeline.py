@@ -133,6 +133,33 @@ def _crawled_domains(rows: list[dict]) -> set[str]:
     return {str(r.get("site", "")).lower() for r in rows if r.get("site")}
 
 
+def _phones_from_serp_text(cand: dict) -> list[dict]:
+    """Запасной источник: номер иногда есть в сниппете Яндекса, а сайт с Render не открылся."""
+    from server.phones import extract_phones, phone_type
+
+    blob = " ".join(
+        [
+            str(cand.get("title") or ""),
+            str(cand.get("snippet") or ""),
+            str(cand.get("offer") or ""),
+        ]
+    ).strip()
+    if not blob:
+        return []
+    found = extract_phones(blob, "")
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in found:
+        p = item.get("phone")
+        if not p or p in seen:
+            continue
+        if phone_type(p) not in ("mobile", "city"):
+            continue
+        seen.add(p)
+        out.append({**item, "source": "serp-snippet"})
+    return out
+
+
 def _build_row(
     cand: dict,
     cr: dict,
@@ -142,13 +169,20 @@ def _build_row(
     region_mode: str = "include",
 ) -> dict:
     domain = cand["domain"]
-    phones_meta = cr.get("phones_meta") or []
+    phones_meta = list(cr.get("phones_meta") or [])
+    if not phones_meta:
+        phones_meta = _phones_from_serp_text(cand)
     phone_list = pick_phones_list(phones_meta, phone_filter)
     p1, p2, t1, t2 = pick_phones_enriched(phones_meta, phone_filter)
     name = cr.get("title") or cand.get("title") or domain
     offer = _offer_line(cand, regions, region_mode=region_mode)
     region_tag = _detect_region(cand)
     crawl_st = "success" if cr.get("ok") else "error"
+    if p1 and not (cr.get("phones_meta") or []) and phones_meta:
+        source = "SERP"
+        crawl_st = "success"
+    else:
+        source = "сайт" if (cr.get("phones_meta") or []) else "SERP"
     return {
         "site": domain,
         "name": name[:120],
@@ -161,7 +195,7 @@ def _build_row(
         "p2_type": t2,
         "p1_valid": validate_phone(p1)["valid"] if p1 else True,
         "p2_valid": validate_phone(p2)["valid"] if p2 else True,
-        "source": "сайт" if phones_meta else "SERP",
+        "source": source,
         "status": "найден" if p1 else "без телефона",
         "crawl_status": crawl_st,
     }
@@ -364,6 +398,25 @@ async def _crawl_candidates(
                     "title": domain,
                 }
                 await site_log(f"{domain} — {_error_message(exc)}", domain, "error")
+
+            # Если сайт не отдал HTML с Render — один повтор через proxy (если ключи есть).
+            if not (cr.get("phones_meta") or []) and not use_proxy and not _is_stopped(run_id):
+                try:
+                    cr2 = await asyncio.wait_for(
+                        parse_site(
+                            domain,
+                            depth=1,
+                            use_proxy=True,
+                            delay_ms=0,
+                            on_log=site_log,
+                        ),
+                        timeout=min(SITE_CRAWL_TIMEOUT, 90),
+                    )
+                    if cr2.get("phones_meta"):
+                        cr = cr2
+                        await site_log(f"{domain} — телефон после proxy-повтора", domain, "success")
+                except Exception:
+                    pass
 
             row = _build_row(
                 cand,

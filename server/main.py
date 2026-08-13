@@ -143,7 +143,7 @@ def health():
         "ok": True,
         "version": BUILD_VERSION,
         "branch": "main",
-        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest", "instructions", "history-log", "admin-history"],
+        "features": ["quick-crawl", "pilot-queries", "resume", "brief-suggest", "instructions", "history-log", "admin-history", "phones-900", "early-phone-stop"],
         "search_provider": "xmlriver",
         "xmlriver_configured": bool(user and key),
         "yandex_xml_fallback": bool(YANDEX_XML_USER and YANDEX_XML_KEY),

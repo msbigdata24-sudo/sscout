@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
 # Меняется при каждом значимом релизе — проверка, что Render подтянул новый код.
-BUILD_VERSION = "2026-07-30-export-gates"
+BUILD_VERSION = "2026-08-13-phones-900-crawl"
 
 MAX_EXPORT_PHONES = 6
 
@@ -32,8 +32,9 @@ FILTER_ALIVE_TIMEOUT = max(3, min(15, int(os.getenv("FILTER_ALIVE_TIMEOUT", "6")
 # Сколько максимум секунд тратить на проверку «живой сайт» на шаге Фильтры.
 FILTER_ALIVE_BUDGET_SEC = max(30, min(600, int(os.getenv("FILTER_ALIVE_BUDGET_SEC", "120"))))
 HTTP_TIMEOUT = max(5, int(os.getenv("HTTP_TIMEOUT", "20")))
-SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "45")))
-SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "90")))
+# Тяжёлые лендинги (1+ МБ) с Render часто не укладываются в 45 с.
+SITE_TIMEOUT = max(10, int(os.getenv("SITE_TIMEOUT", "60")))
+SITE_CRAWL_TIMEOUT = max(15, int(os.getenv("SITE_CRAWL_TIMEOUT", "150")))
 SERP_TIMEOUT = max(30, int(os.getenv("SERP_TIMEOUT", "90")))
 FETCH_RETRIES = max(1, min(5, int(os.getenv("FETCH_RETRIES", "3"))))
 SERP_PAGES = max(1, min(10, int(os.getenv("SERP_PAGES", "4"))))
